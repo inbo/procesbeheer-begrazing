@@ -1,0 +1,127 @@
+---
+title: "Untitled"
+author: "Hans Van Calster"
+date: "9-6-2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+opts_chunk$set(echo = TRUE)
+
+library(raster)
+library(stars)
+library(rprojroot)
+library(googlesheets4)
+library(tidyverse)
+
+
+```
+
+
+Via deze link vinden jullie een geo tiff-bestand met een resolutie; pixelgrootte = 2,5 cm x 2,5 cm . Elke cel vertegenwoordigt dus een oppervlakte van 6,25 cm².
+Het is een bestand van ca. 1 GB en vertegenwoordigd slechts een kleine, mij onbekende oppervlakte van het proefgebied van 2,5 ha.
+Het bestand is onhandelbaar in ArcGIS (moet upgeload worden naar de Amazon server, inladen in ArcMap, etc.) en wordt met veel moeite (na lange tijd en verschillende vastgelopen sessies) geprojecteerd. Via Q-Gis gaat het beter, omdat het bestand dan rechtstreeks wordt aangesproken vanop de Gdrive, maar het is zodanig fijnmazig dat visualiseren en interpreteren lastig is. (ik heb er 1,5 dag aan verprutst).
+
+We hebben een 140-tal handmatige metingen van de vegetatiehoogte uitgevoerd (zie deze file, tabblad zwin_4mei2020_voorR). De vegetatiehoogte werd op gestandaardiseerde manier opgemeten (via een protocol voor vegetatiehoogtemeting). 
+Protocol vegetatiehoogtemeting:
+1. X, y en z-coördinaten van het meetpunt wordt opgemeten met de RTK-GPS met een nauwkeurigheid < 2cm; Het x en y-coördinaat staat in het Belge Lambert coördinaten systeem, terwijl het z-coördinaat de hoogteligging in meters TAW weergeeft. Op de RTK-stok wordt een stokmeter geplakt voor het aflezen van de vegetatiehoogte.
+2. De vegetatiehoogte wordt opgemeten op cm-niveau. Het meetpuntnummer, de hoogte waarbinnen de hoogste 75-100% van de vegetatie (gemiddelde van de top of canopy) valt in een cirkel van 10-20 cm diameter rondom de stok, het hoogste punt van de vegetatie (waar die de stok raakt) en het vegetatietype worden genoteerd op een veldformulier. In de Trimble worden het meetpuntnummer en de hoogte waarop het hoogste punt van de vegetatie de stok raakt genoteerd. Deze gegevens werden gebundeld in 1 databestand.
+3. Voor elk ingemeten punt wordt het vegetatietype op hoofdlijnen ingeschat. Bij mengvormen wordt het verste successiestadium genoteerd.
+
+De eerste bedoeling is om de handmatige metingen te vergelijken met de door de drone opgemeten hoogte. 
+De tweede bedoeling is om  verschillende kaarten van de vegetatiehoogte met elkaar te vergelijken.
+
+De hamvraag is nu of het mogelijk is om op basis van het raster deze bewerkingen uit te voeren in R. Punten extraheren op de locatie van de handmatige metingen alsook rekenen met rasters?
+
+
+```{r read-tif}
+tif_file <- find_root_file("dronebeelden", "raster_test.tif",
+                       criterion = is_git_root)
+
+raster_band1 <- raster(tif_file, band = 1)
+raster_band2 <- raster(tif_file, band = 2)
+
+
+raster_band1
+raster_band2
+```
+
+```{r read-stars}
+rasterio <- list(band = 1)
+tif_file_proxy <- read_stars(tif_file, proxy = TRUE, RasterIO = rasterio)
+st_crs(tif_file_proxy)<- 31370
+tif_file_proxy
+names(tif_file_proxy)
+
+```
+
+```{r select-band}
+select_band <- function(band, band_number) {
+  band[band_number]
+  }
+band1_proxy <- st_apply(
+  X = tif_file_proxy, 
+  MARGIN = c("x", "y"), 
+  FUN = select_band,
+  band_number = 1)
+
+band2_proxy <- st_apply(
+  X = tif_file_proxy, 
+  MARGIN = c("x", "y"), 
+  FUN = select_band,
+  band_number = 2)
+```
+
+
+```{r plot-stars}
+plot(band1_proxy)
+plot(band2_proxy)
+```
+
+
+
+```{r plot-tif}
+spplot(raster_band1) # hoogte in meter boven TAW??
+spplot(raster_band2) # hoogte in meter boven maaiveld?
+
+```
+
+
+```{r extent-tif}
+extent <- bbox(raster_band1)
+
+opp_extent_ha <- (extent[1, 2] - extent[1,1]) * (extent[2, 2] - extent[2,1]) / 1e4
+opp_extent_ha
+```
+
+
+```{r read-sheet}
+gcp <- read_sheet(ss = "https://docs.google.com/spreadsheets/d/1OFLXjb2_jUbbNla9OHMuLnyro93bbkh1pJHcjcZsuM8/edit#gid=78378400", sheet = "zwin_4mei2020_voorR")
+
+glimpse(gcp)
+```
+
+
+```{r}
+gcp_sf <- st_as_sf(gcp,
+                   crs = 31370, 
+                   coords = c("x_lambert", "y_lambert"))
+```
+
+
+```{r}
+ggplot() + 
+  geom_sf(data = gcp_sf, aes(colour = maxhoog/100)) 
+```
+
+
+```{r}
+ggplot() + 
+  geom_stars(data = band2_proxy, downsample = 50) +
+  geom_sf(data = gcp_sf, aes(colour = maxhoog/100)) 
+
+```
+
+
+
