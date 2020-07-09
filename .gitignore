@@ -40,6 +40,8 @@ vignettes/*.pdf
 
 # tif bestand
 *.tif
+dronebeelden/
 
 # html
 *.html
+

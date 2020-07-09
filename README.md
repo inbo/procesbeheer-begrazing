@@ -1,2 +1,61 @@
-# procesbeheer-begrazing
-Langetermijn-monitoring van de processen in kerngebieden die representatief zijn voor onbeheerde climaxvegetaties of door begrazing gestuurde mozaïeklandschappen 
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+## procesbeheer-begrazing
+
+Langetermijn-monitoring van de processen in kerngebieden die
+representatief zijn voor onbeheerde climaxvegetaties of door begrazing
+gestuurde mozaïeklandschappen
+
+## Structuur van de repository
+
+    #> .
+    #> +-- data
+    #> +-- dronebeelden
+    #> \-- src
+
+## De repository lokaal installeren
+
+  - ga naar [de
+    repository](https://github.com/inbo/procesbeheer-begrazing/) en klik
+    op Code en kopieer vervolgens de link naar het klembord
+  - start RStudio en selecteer `File -> New project -> Version Control
+    -> Git` -\> paste the URL
+  - `procesbeheer-begrazing` zal automatisch gesuggereerd worden als
+    project foldernaam
+  - In het veld `Create project as subdirectory of` selecteer een map op
+    je lokale harde schijf. Bijvoorbeeld `C:/R/GitRepositories`.
+  - klik OK
+
+Je hebt nu een lokale kloon van de remote repository beschikbaar als een
+RStudio project. Dezelfde mappen en bestanden die je kan zien op de
+[remote](https://github.com/inbo/procesbeheer-begrazing) worden
+gekopieerd naar je lokale harde schijf. Een `.git` map wordt eveneens
+aangemaakt (hier mag niets in gewijzigd worden).
+
+Wanneer je wil werken aan het project, open je het bestand
+`procesbeheer-begrazing.Rproj` met RStudio.
+
+## Versiebeheer
+
+Een goede manier om samen te werken in git is [volgens deze
+workflow](https://inbo.github.io/git-course/workflow_rstudio.html).
+
+## Opslaan en delen van grote bestanden
+
+Git is niet geschikt voor het opslaan en delen van grote (binaire)
+bestanden, of voor het versiebeheer ervan.
+
+Omdat binnen dit project, gebruik wordt gemaakt van dronebeelden (tif
+bestanden van enkele gigabyte), zullen we gebruik maken van een gedeelde
+google drive folder.
+
+Met behulp van het `googledrive` package, kunnen deze bestanden
+gedownload worden naar de map `dronebeelden/`. Alle bestanden in deze
+map worden genegeerd door het versiebeheer.
+
+## Welke mappen en bestanden staan niet onder versiebeheer?
+
+Sommige bestanden, bestandstypes en mappen worden niet getraceerd door
+het git controlesysteem. Welke dit zijn staat in [het .gitignore
+bestand](.gitignore).
