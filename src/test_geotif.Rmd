@@ -19,7 +19,7 @@ library(tidyverse)
 ```
 
 
-Via deze link vinden jullie een geo tiff-bestand met een resolutie; pixelgrootte = 2,5 cm x 2,5 cm . Elke cel vertegenwoordigt dus een oppervlakte van 6,25 cm².
+Via deze link vinden jullie een geo tiff-bestand met een resolutie; pixelgrootte = 2,4 cm x 2,4 cm (5,76cm²). Elke cel vertegenwoordigt dus een oppervlakte van 6,25 cm².
 Het is een bestand van ca. 1 GB en vertegenwoordigd slechts een kleine, mij onbekende oppervlakte van het proefgebied van 2,5 ha.
 Het bestand is onhandelbaar in ArcGIS (moet upgeload worden naar de Amazon server, inladen in ArcMap, etc.) en wordt met veel moeite (na lange tijd en verschillende vastgelopen sessies) geprojecteerd. Via Q-Gis gaat het beter, omdat het bestand dan rechtstreeks wordt aangesproken vanop de Gdrive, maar het is zodanig fijnmazig dat visualiseren en interpreteren lastig is. (ik heb er 1,5 dag aan verprutst).
 
@@ -36,7 +36,7 @@ De hamvraag is nu of het mogelijk is om op basis van het raster deze bewerkingen
 
 
 ```{r read-tif}
-tif_file <- find_root_file("dronebeelden", "raster_test.tif",
+tif_file <- find_root_file("dronebeelden", "20200504_0179201_Reeks2_45m_CC.tif",
                        criterion = is_git_root)
 
 raster_band1 <- raster(tif_file, band = 1)
@@ -97,7 +97,7 @@ opp_extent_ha
 
 
 ```{r read-sheet}
-gcp <- read_sheet(ss = "https://docs.google.com/spreadsheets/d/1OFLXjb2_jUbbNla9OHMuLnyro93bbkh1pJHcjcZsuM8/edit#gid=78378400", sheet = "zwin_4mei2020_voorR")
+gcp <- "zwin_4mei2020_voorR")
 
 glimpse(gcp)
 ```
