@@ -1,0 +1,203 @@
+---
+title: "Validatie hoogtemetingen dronebeelden"
+author: "Hans Van Calster"
+date: "`r Sys.Date()`"
+output: 
+  bookdown::html_document2:
+    toc: true
+    toc_float: true
+    df_print: paged
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+opts_chunk$set(echo = TRUE)
+
+library(raster)
+library(rprojroot)
+library(googlesheets4)
+library(tidyverse)
+library(jsonlite)
+library(sf)
+library(rasterVis)
+```
+
+
+## Doel
+
+De eerste bedoeling is om de handmatige metingen te vergelijken met de door de drone opgemeten hoogte. 
+De tweede bedoeling is om  verschillende kaarten van de vegetatiehoogte met elkaar te vergelijken.
+
+De hamvraag is nu of het mogelijk is om op basis van het raster deze bewerkingen uit te voeren in R. Punten extraheren op de locatie van de handmatige metingen alsook rekenen met rasters?
+
+
+## Inlezen rastergegevens
+
+```{r}
+metadata <- read_json(
+  find_root_file("dronebeelden",
+                 "20200504_0179201_Reeks1_45m_CC_properties.json",
+                 criterion = is_git_root),
+  simplifyVector = TRUE)
+```
+
+
+```{r}
+metadata
+```
+
+
+
+```{r read-tif}
+tif_file <- find_root_file("dronebeelden", "20200504_0179201_Reeks2_45m_CC.tif",
+                       criterion = is_git_root)
+
+
+## single bands:
+raster_band1 <- raster(tif_file, band = 1)
+raster_band2 <- raster(tif_file, band = 2)
+
+
+raster_band1
+raster_band2
+
+## all together in one rasterBrick
+drone1 <- brick(tif_file)
+
+```
+
+```{r}
+drone1
+```
+
+
+
+```{r extent-tif}
+extent <- bbox(raster_band1)
+
+opp_extent_ha <- (extent[1, 2] - extent[1,1]) * (extent[2, 2] - extent[2,1]) / 1e4
+opp_extent_ha
+```
+
+
+
+## Inlezen validatiemetingen
+
+We hebben een 140-tal handmatige metingen van de vegetatiehoogte uitgevoerd (zie deze file, tabblad zwin_4mei2020_voorR). De vegetatiehoogte werd op gestandaardiseerde manier opgemeten (via een protocol voor vegetatiehoogtemeting). 
+Protocol vegetatiehoogtemeting:
+1. X, y en z-coördinaten van het meetpunt wordt opgemeten met de RTK-GPS met een nauwkeurigheid < 2cm; Het x en y-coördinaat staat in het Belge Lambert coördinaten systeem, terwijl het z-coördinaat de hoogteligging in meters TAW weergeeft. Op de RTK-stok wordt een stokmeter geplakt voor het aflezen van de vegetatiehoogte.
+2. De vegetatiehoogte wordt opgemeten op cm-niveau. Het meetpuntnummer, de hoogte waarbinnen de hoogste 75-100% van de vegetatie (gemiddelde van de top of canopy) valt in een cirkel van 10-20 cm diameter rondom de stok, het hoogste punt van de vegetatie (waar die de stok raakt) en het vegetatietype worden genoteerd op een veldformulier. In de Trimble worden het meetpuntnummer en de hoogte waarop het hoogste punt van de vegetatie de stok raakt genoteerd. Deze gegevens werden gebundeld in 1 databestand.
+3. Voor elk ingemeten punt wordt het vegetatietype op hoofdlijnen ingeschat. Bij mengvormen wordt het verste successiestadium genoteerd.
+
+```{r read-sheet}
+gcp <- read_csv2(file = find_root_file(
+  "data",
+  "zwin_4mei2020_valgeg.csv",
+  criterion = is_git_root))
+
+gcp <- gcp %>%
+  filter(!is.na(maxhoog)) %>%
+  select(-starts_with("X", ignore.case = FALSE))
+
+gcp <- gcp %>%
+  mutate(maxhoog = parse_number(maxhoog))
+
+```
+
+
+```{r}
+gcp_sf <- st_as_sf(gcp,
+                   crs = crs(drone1), 
+                   coords = c("x_lambert", "y_lambert"))
+```
+
+
+```{r}
+ggplot() + 
+  geom_sf(data = gcp_sf, aes(colour = maxhoog/100)) 
+```
+
+
+
+
+## Vergelijking
+
+```{r}
+ggraster <- gplot(raster(drone1, 6))
+
+ggplot() +
+  geom_tile(data = ggraster$data,
+            aes(x = x, y = y, fill = value)) +
+  geom_sf(data = gcp_sf, 
+          aes(colour = maaiveld_taw_m + gemhoog/100)) +
+  facet_wrap(~ variable) +
+  scale_fill_gradient(low = 'white', high = 'blue') +
+  coord_sf()
+
+```
+
+
+
+```{r}
+drone1 <- brick(tif_file)
+
+gcp_drone1 <- raster::extract(drone1, as(gcp_sf, "Spatial"), df = TRUE)
+```
+
+
+```{r}
+drone_validation_sf <- gcp_sf %>%
+  bind_cols(gcp_drone1)
+drone_validation <- gcp %>%
+  bind_cols(gcp_drone1)
+```
+
+
+```{r}
+drone_validation 
+```
+
+
+
+```{r}
+drone_validation <- 
+  drone_validation %>%
+  mutate(drone_avg_hoogte_cm = (z_average - maaiveld_taw_m)*100)
+```
+
+
+
+```{r}
+drone_validation %>%
+  ggplot() +
+  geom_point(aes(x = gemhoog, y = drone_avg_hoogte_cm, 
+                 colour = biotooptyp)) +
+  geom_abline()
+```
+
+```{r}
+drone_validation %>%
+  ggplot() +
+  geom_point(aes(x = maxhoog, y = drone_avg_hoogte_cm, 
+                 colour = biotooptyp)) +
+  geom_abline()
+```
+
+```{r}
+drone_validation %>%
+  ggplot() +
+  geom_point(aes(x = hoog_na_snoei, y = drone_avg_hoogte_cm, 
+                 colour = biotooptyp)) +
+  geom_abline()
+```
+
+
+```{r}
+drone_validation %>%
+  ggplot() +
+  geom_point(aes(x = hoog_na_snoei, y = drone_avg_hoogte_cm)) +
+  geom_abline() +
+  facet_wrap(~biotooptyp)
+```
+
