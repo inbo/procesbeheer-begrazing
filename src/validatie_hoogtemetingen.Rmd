@@ -123,6 +123,23 @@ ggplot() +
 
 ## Vergelijking
 
+### dronevlucht Reeks 1, 45 meter versus veldmetingen
+
+Vluchtgegevens van voor de snoei.
+
+Berekening hoogte van bladerdak uit dronebeelden door verschil te nemen tussen `z_average` en `maaiveld_taw_m`. 
+`z_average` is de hoogte boven TAW in meter gemeten met de drone.
+`maaiveld_taw_m` is de hoogte in meter boven TAW gemeten met de RTK-GPS.
+
+Verschillende aggregatiemanieren werden uitgetest voor `z_average`:
+
+- geen buffer rond het gcp (ground control point): de waarde van `z_average` zoals in het geotiff bestand. Dit betekent op een resolutie van 2.4 cm x 2.4 cm. In de meeste gevallen werd `z_average` dan berekend op basis van slechts één punt uit de puntenwolk (de ruwe onverwerkte gegevens)
+- een buffer van 10 cm rond het gcp en als aggregatiemethode het gemiddelde 
+- een buffer van 10 cm rond het gcp en als aggregatiemethode het maximum
+- een buffer van 20 cm rond het gcp en als aggregatiemethode het gemiddelde 
+- een buffer van 20 cm rond het gcp en als aggregatiemethode het maximum
+
+
 ```{r}
 ggraster <- gplot(raster(drone1, 6))
 
@@ -143,61 +160,162 @@ ggplot() +
 drone1 <- brick(tif_file)
 
 gcp_drone1 <- raster::extract(drone1, as(gcp_sf, "Spatial"), df = TRUE)
+
+gcp_drone1_b10cm_mean <- raster::extract(
+  drone1, 
+  as(gcp_sf, "Spatial"), 
+  df = TRUE,
+  buffer = 0.1,#meter
+  fun = mean,
+  na.rm = TRUE
+  )
+
+gcp_drone1_b10cm_max <- raster::extract(
+  drone1, 
+  as(gcp_sf, "Spatial"), 
+  df = TRUE,
+  buffer = 0.1,#meter
+  fun = max,
+  na.rm = TRUE
+  )
+
+gcp_drone1_b20cm_mean <- raster::extract(
+  drone1, 
+  as(gcp_sf, "Spatial"), 
+  df = TRUE,
+  buffer = 0.2,#meter
+  fun = mean,
+  na.rm = TRUE
+  )
+
+gcp_drone1_b20cm_max <- raster::extract(
+  drone1, 
+  as(gcp_sf, "Spatial"), 
+  df = TRUE,
+  buffer = 0.2,#meter
+  fun = max,
+  na.rm = TRUE
+  )
+
+```
+
+```{r}
+reeks1_gcp <- gcp_drone1 %>%
+  mutate(buffer = 0, 
+         fn = "mean") %>%
+  bind_rows(gcp_drone1_b10cm_max %>%
+              mutate(buffer = 10,
+                     fn = "max")) %>%
+  bind_rows(gcp_drone1_b10cm_mean %>%
+              mutate(buffer = 10,
+                     fn = "mean")) %>%
+  bind_rows(gcp_drone1_b20cm_max %>%
+              mutate(buffer = 20,
+                     fn = "max")) %>%
+  bind_rows(gcp_drone1_b20cm_mean %>%
+              mutate(buffer = 20,
+                     fn = "mean")) %>%
+  as_tibble()
+
 ```
 
 
+
 ```{r}
-drone_validation_sf <- gcp_sf %>%
-  bind_cols(gcp_drone1)
 drone_validation <- gcp %>%
-  bind_cols(gcp_drone1)
+  mutate(ID = 1:n()) %>%
+  left_join(reeks1_gcp,
+            by = "ID")
+
 ```
-
-
-```{r}
-drone_validation 
-```
-
 
 
 ```{r}
 drone_validation <- 
   drone_validation %>%
-  mutate(drone_avg_hoogte_cm = (z_average - maaiveld_taw_m)*100)
+  mutate(drone_hoogte_cm = (z_average - maaiveld_taw_m)*100)
 ```
 
-
+Vergelijking met `gemhoog` (gemiddelde hoogte):
 
 ```{r}
 drone_validation %>%
   ggplot() +
-  geom_point(aes(x = gemhoog, y = drone_avg_hoogte_cm, 
+  geom_point(aes(x = gemhoog, 
+                 y = drone_hoogte_cm, 
                  colour = biotooptyp)) +
-  geom_abline()
-```
-
-```{r}
-drone_validation %>%
-  ggplot() +
-  geom_point(aes(x = maxhoog, y = drone_avg_hoogte_cm, 
-                 colour = biotooptyp)) +
-  geom_abline()
-```
-
-```{r}
-drone_validation %>%
-  ggplot() +
-  geom_point(aes(x = hoog_na_snoei, y = drone_avg_hoogte_cm, 
-                 colour = biotooptyp)) +
-  geom_abline()
-```
-
-
-```{r}
-drone_validation %>%
-  ggplot() +
-  geom_point(aes(x = hoog_na_snoei, y = drone_avg_hoogte_cm)) +
   geom_abline() +
-  facet_wrap(~biotooptyp)
+  facet_grid(buffer ~ fn, labeller = label_both)
 ```
+
+
+```{r}
+drone_validation %>%
+  ggplot() +
+  geom_point(aes(x = gemhoog, 
+                 y = drone_hoogte_cm - gemhoog, 
+                 colour = biotooptyp)) +
+  geom_smooth(aes(x = gemhoog, 
+                 y = drone_hoogte_cm - gemhoog)) +
+  geom_hline(yintercept = 0) +
+  facet_grid(buffer ~ fn, labeller = label_both)
+```
+
+```{r}
+drone_validation %>%
+  ggplot() +
+  geom_point(aes(x = gemhoog, 
+                 y = (drone_hoogte_cm - gemhoog) / gemhoog, 
+                 colour = biotooptyp)) +
+  geom_smooth(aes(x = gemhoog, 
+                 y = (drone_hoogte_cm - gemhoog) / gemhoog)) +
+  geom_hline(yintercept = 0) +
+  scale_y_continuous(labels = scales::percent) +
+  facet_grid(buffer ~ fn, labeller = label_both)
+```
+
+Vergelijking met `maxhoog` (maximum hoogte):
+
+```{r}
+drone_validation %>%
+  ggplot() +
+  geom_point(aes(x = maxhoog, 
+                 y = drone_hoogte_cm, 
+                 colour = biotooptyp)) +
+  geom_abline() +
+  facet_grid(buffer ~ fn, labeller = label_both)
+```
+
+```{r}
+drone_validation %>%
+  ggplot() +
+  geom_point(aes(x = maxhoog, 
+                 y = drone_hoogte_cm - maxhoog, 
+                 colour = biotooptyp)) +
+  geom_smooth(aes(x = maxhoog, 
+                 y = drone_hoogte_cm - maxhoog)) +
+  geom_hline(yintercept = 0) +
+  facet_grid(buffer ~ fn, labeller = label_both)
+```
+
+
+
+```{r}
+drone_validation %>%
+  ggplot() +
+  geom_point(aes(x = maxhoog, 
+                 y = (drone_hoogte_cm - maxhoog) / maxhoog, 
+                 colour = biotooptyp)) +
+  geom_smooth(aes(x = maxhoog, 
+                 y = (drone_hoogte_cm - maxhoog) / maxhoog)) +
+  geom_hline(yintercept = 0) +
+  scale_y_continuous(labels = scales::percent) +
+  facet_grid(buffer ~ fn, labeller = label_both)
+```
+
+Op het eerste zicht lijken de dronebeelden dus het beste `gemhoog` te benaderen wanneer `z_average` berekend wordt in een buffer van 20 cm en als aggregatiemethode het maximum genomen wordt. 
+Voor dat geval blijft, relatief gezien, de afwijking min of meer constant, behalve bij heel korte vegetaties waar ze groter wordt.
+Er blijft een lichte onderschatting.
+In absolute termen zien we voor individuele punten toch nog behoorlijke sterke afwijkingen.
+
 
