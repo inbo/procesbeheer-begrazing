@@ -80,10 +80,18 @@ Daar kan je dus best vragen om te zorgen dat het 90m beeld op dezelfde manier wo
 
 
 ```{r extent-tif}
-extent <- bbox(raster_band1)
+calc_extent <- function(brick) {
+  extent <- bbox(brick)
+  opp_extent_ha <- (extent[1, 2] - extent[1,1]) * (extent[2, 2] - extent[2,1]) / 1e4
+  return(data.frame(opp_ha = opp_extent_ha))
 
-opp_extent_ha <- (extent[1, 2] - extent[1,1]) * (extent[2, 2] - extent[2,1]) / 1e4
-opp_extent_ha
+}
+
+map_dfr(.x = list(brick_reeks1_45m = brick_reeks1_45m,
+              brick_reeks2_45m = brick_reeks2_45m,
+              brick_reeks2_90m = brick_reeks2_90m),
+    .f = calc_extent, 
+    .id = "reeks")
 ```
 
 
@@ -114,17 +122,22 @@ gcp
 ```
 
 ```{r}
+# bestand van Sam bevat 1 rij extra en een aantal zelf berekende kolommen
+# Max_H_TAW = maxhoog + hoogte TAW maaiveld zoals gemeten door Trimble
+# GEM_H_TAW = gemhoog + hoogte TAW maaiveld zoals gemeten door Trimble
+# H_NA_SN_TAW = hoog_na_snoei + hoogte TAW maaiveld zoals gemeten door Trimble
 gcp2 <- readxl::read_excel(path = find_root_file(
   "data",
   "Drone20200504_Validatie2.xlsx",
   criterion = is_git_root))
+gcp2
 ```
 
 
 
 ```{r}
 gcp_sf <- st_as_sf(gcp,
-                   crs = crs(drone1), 
+                   crs = crs(brick_reeks1_45m), 
                    coords = c("x_lambert", "y_lambert"))
 ```
 
@@ -156,8 +169,8 @@ Verschillende aggregatiemanieren werden uitgetest voor `z_average`:
 - een buffer van 20 cm rond het gcp en als aggregatiemethode het maximum
 
 
-```{r}
-ggraster <- gplot(raster(drone1, 6))
+```{r eval=FALSE}
+ggraster <- gplot(raster(brick_reeks1_45m, layer = 6))
 
 ggplot() +
   geom_tile(data = ggraster$data,
@@ -165,20 +178,18 @@ ggplot() +
   geom_sf(data = gcp_sf, 
           aes(colour = maaiveld_taw_m + gemhoog/100)) +
   facet_wrap(~ variable) +
-  scale_fill_gradient(low = 'white', high = 'blue') +
+  scale_colour_gradient(aesthetics = c("colour", "fill")) + 
   coord_sf()
-
 ```
 
 
 
 ```{r}
-drone1 <- brick(tif_file)
 
-gcp_drone1 <- raster::extract(drone1, as(gcp_sf, "Spatial"), df = TRUE)
+gcp_brick_reeks1_45m <- raster::extract(brick_reeks1_45m, as(gcp_sf, "Spatial"), df = TRUE)
 
-gcp_drone1_b10cm_mean <- raster::extract(
-  drone1, 
+gcp_brick_reeks1_45m_b10cm_mean <- raster::extract(
+  brick_reeks1_45m, 
   as(gcp_sf, "Spatial"), 
   df = TRUE,
   buffer = 0.1,#meter
@@ -186,8 +197,8 @@ gcp_drone1_b10cm_mean <- raster::extract(
   na.rm = TRUE
   )
 
-gcp_drone1_b10cm_max <- raster::extract(
-  drone1, 
+gcp_brick_reeks1_45m_b10cm_max <- raster::extract(
+  brick_reeks1_45m, 
   as(gcp_sf, "Spatial"), 
   df = TRUE,
   buffer = 0.1,#meter
@@ -195,8 +206,8 @@ gcp_drone1_b10cm_max <- raster::extract(
   na.rm = TRUE
   )
 
-gcp_drone1_b20cm_mean <- raster::extract(
-  drone1, 
+gcp_brick_reeks1_45m_b20cm_mean <- raster::extract(
+  brick_reeks1_45m, 
   as(gcp_sf, "Spatial"), 
   df = TRUE,
   buffer = 0.2,#meter
@@ -204,8 +215,8 @@ gcp_drone1_b20cm_mean <- raster::extract(
   na.rm = TRUE
   )
 
-gcp_drone1_b20cm_max <- raster::extract(
-  drone1, 
+gcp_brick_reeks1_45m_b20cm_max <- raster::extract(
+  brick_reeks1_45m, 
   as(gcp_sf, "Spatial"), 
   df = TRUE,
   buffer = 0.2,#meter
@@ -216,19 +227,19 @@ gcp_drone1_b20cm_max <- raster::extract(
 ```
 
 ```{r}
-reeks1_gcp <- gcp_drone1 %>%
+reeks1_45m_gcp <- gcp_brick_reeks1_45m %>%
   mutate(buffer = 0, 
          fn = "mean") %>%
-  bind_rows(gcp_drone1_b10cm_max %>%
+  bind_rows(gcp_brick_reeks1_45m_b10cm_max %>%
               mutate(buffer = 10,
                      fn = "max")) %>%
-  bind_rows(gcp_drone1_b10cm_mean %>%
+  bind_rows(gcp_brick_reeks1_45m_b10cm_mean %>%
               mutate(buffer = 10,
                      fn = "mean")) %>%
-  bind_rows(gcp_drone1_b20cm_max %>%
+  bind_rows(gcp_brick_reeks1_45m_b20cm_max %>%
               mutate(buffer = 20,
                      fn = "max")) %>%
-  bind_rows(gcp_drone1_b20cm_mean %>%
+  bind_rows(gcp_brick_reeks1_45m_b20cm_mean %>%
               mutate(buffer = 20,
                      fn = "mean")) %>%
   as_tibble()
@@ -240,7 +251,7 @@ reeks1_gcp <- gcp_drone1 %>%
 ```{r}
 drone_validation <- gcp %>%
   mutate(ID = 1:n()) %>%
-  left_join(reeks1_gcp,
+  left_join(reeks1_45m_gcp,
             by = "ID")
 
 ```
@@ -331,7 +342,175 @@ drone_validation %>%
 
 Op het eerste zicht lijken de dronebeelden dus het beste `gemhoog` te benaderen wanneer `z_average` berekend wordt in een buffer van 20 cm en als aggregatiemethode het maximum genomen wordt. 
 Voor dat geval blijft, relatief gezien, de afwijking min of meer constant, behalve bij heel korte vegetaties waar ze groter wordt.
-Er blijft een lichte onderschatting.
-In absolute termen zien we voor individuele punten toch nog behoorlijke sterke afwijkingen.
+
+In absolute termen zien we enkele individuele punten toch nog behoorlijke onderschatting van de hoogte.
+
+Mogelijk is het zinvol om nog een iets grotere buffer te nemen.
+
+Detail van buffer 20 cm, aggregatiemethode = max vergeleken met gemhoog:
+
+```{r}
+drone_validation %>%
+  filter(buffer == 20,
+         fn == "max") %>%
+  ggplot() +
+  geom_point(aes(x = gemhoog, 
+                 y = drone_hoogte_cm, 
+                 colour = biotooptyp)) +
+  geom_abline() +
+  geom_smooth(aes(x = gemhoog, 
+                 y = drone_hoogte_cm)) + 
+  facet_wrap(buffer ~ fn, labeller = label_both)
+```
+
+### dronevlucht Reeks 2, 45 meter versus veldmetingen
+
+Vluchtgegevens van na de snoei.
+
+Berekening hoogte van bladerdak uit dronebeelden door verschil te nemen tussen `z_average` en `maaiveld_taw_m`. 
+`z_average` is de hoogte boven TAW in meter gemeten met de drone.
+`maaiveld_taw_m` is de hoogte in meter boven TAW gemeten met de RTK-GPS.
+
+Verschillende aggregatiemanieren werden uitgetest voor `z_average`:
+
+- geen buffer rond het gcp (ground control point): de waarde van `z_average` zoals in het geotiff bestand. Dit betekent op een resolutie van 2.4 cm x 2.4 cm. In de meeste gevallen werd `z_average` dan berekend op basis van slechts één punt uit de puntenwolk (de ruwe onverwerkte gegevens)
+- een buffer van 10 cm rond het gcp en als aggregatiemethode het gemiddelde 
+- een buffer van 10 cm rond het gcp en als aggregatiemethode het maximum
+- een buffer van 20 cm rond het gcp en als aggregatiemethode het gemiddelde 
+- een buffer van 20 cm rond het gcp en als aggregatiemethode het maximum
 
 
+```{r eval=FALSE}
+ggraster <- gplot(raster(brick_reeks2_45m, layer = 6))
+
+ggplot() +
+  geom_tile(data = ggraster$data,
+            aes(x = x, y = y, fill = value)) +
+  geom_sf(data = gcp_sf, 
+          aes(colour = maaiveld_taw_m + gemhoog/100)) +
+  facet_wrap(~ variable) +
+  scale_colour_gradient(aesthetics = c("colour", "fill")) + 
+  coord_sf()
+
+#rasterVis::plot3D(raster(brick_reeks2_45m, layer = 6))
+# DTM model 1 m nodig voor deze visualisatie
+```
+
+
+
+```{r}
+
+gcp_brick_reeks2_45m <- raster::extract(brick_reeks2_45m, as(gcp_sf, "Spatial"), df = TRUE)
+
+gcp_brick_reeks2_45m_b10cm_mean <- raster::extract(
+  brick_reeks2_45m, 
+  as(gcp_sf, "Spatial"), 
+  df = TRUE,
+  buffer = 0.1,#meter
+  fun = mean,
+  na.rm = TRUE
+  )
+
+gcp_brick_reeks2_45m_b10cm_max <- raster::extract(
+  brick_reeks2_45m, 
+  as(gcp_sf, "Spatial"), 
+  df = TRUE,
+  buffer = 0.1,#meter
+  fun = max,
+  na.rm = TRUE
+  )
+
+gcp_brick_reeks2_45m_b20cm_mean <- raster::extract(
+  brick_reeks2_45m, 
+  as(gcp_sf, "Spatial"), 
+  df = TRUE,
+  buffer = 0.2,#meter
+  fun = mean,
+  na.rm = TRUE
+  )
+
+gcp_brick_reeks2_45m_b20cm_max <- raster::extract(
+  brick_reeks2_45m, 
+  as(gcp_sf, "Spatial"), 
+  df = TRUE,
+  buffer = 0.2,#meter
+  fun = max,
+  na.rm = TRUE
+  )
+
+```
+
+```{r}
+reeks2_45m_gcp <- gcp_brick_reeks2_45m %>%
+  mutate(buffer = 0, 
+         fn = "mean") %>%
+  bind_rows(gcp_brick_reeks2_45m_b10cm_max %>%
+              mutate(buffer = 10,
+                     fn = "max")) %>%
+  bind_rows(gcp_brick_reeks2_45m_b10cm_mean %>%
+              mutate(buffer = 10,
+                     fn = "mean")) %>%
+  bind_rows(gcp_brick_reeks2_45m_b20cm_max %>%
+              mutate(buffer = 20,
+                     fn = "max")) %>%
+  bind_rows(gcp_brick_reeks2_45m_b20cm_mean %>%
+              mutate(buffer = 20,
+                     fn = "mean")) %>%
+  as_tibble()
+
+```
+
+
+
+```{r}
+drone_validation_reeks2_45m <- gcp %>%
+  mutate(ID = 1:n()) %>%
+  left_join(reeks2_45m_gcp,
+            by = "ID")
+
+```
+
+
+```{r}
+drone_validation_reeks2_45m <- 
+  drone_validation_reeks2_45m %>%
+  mutate(drone_hoogte_cm = (z_average - maaiveld_taw_m)*100)
+```
+
+Vergelijking met `hoog_na_snoei` (hoogte na de snoei):
+
+```{r}
+drone_validation_reeks2_45m %>%
+  ggplot() +
+  geom_point(aes(x = hoog_na_snoei, 
+                 y = drone_hoogte_cm, 
+                 colour = biotooptyp)) +
+  geom_abline() +
+  facet_grid(buffer ~ fn, labeller = label_both)
+```
+
+
+```{r}
+drone_validation_reeks2_45m %>%
+  ggplot() +
+  geom_point(aes(x = hoog_na_snoei, 
+                 y = drone_hoogte_cm - hoog_na_snoei, 
+                 colour = biotooptyp)) +
+  geom_smooth(aes(x = gemhoog, 
+                 y = drone_hoogte_cm - hoog_na_snoei)) +
+  geom_hline(yintercept = 0) +
+  facet_grid(buffer ~ fn, labeller = label_both)
+```
+
+```{r}
+drone_validation_reeks2_45m %>%
+  ggplot() +
+  geom_point(aes(x = hoog_na_snoei, 
+                 y = (drone_hoogte_cm - hoog_na_snoei) / hoog_na_snoei, 
+                 colour = biotooptyp)) +
+  geom_smooth(aes(x = gemhoog, 
+                 y = (drone_hoogte_cm - hoog_na_snoei) / hoog_na_snoei)) +
+  geom_hline(yintercept = 0) +
+  scale_y_continuous(labels = scales::percent) +
+  facet_grid(buffer ~ fn, labeller = label_both)
+```
