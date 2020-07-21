@@ -50,26 +50,32 @@ metadata
 
 
 ```{r read-tif}
-tif_file <- find_root_file("dronebeelden", "20200504_0179201_Reeks2_45m_CC.tif",
+reeks1_45m <- find_root_file("dronebeelden", "20200504_0179201_Reeks1_45m_CC.tif",
+                       criterion = is_git_root)
+
+reeks2_45m <- find_root_file("dronebeelden", "20200504_0179201_Reeks2_45m_CC.tif",
+                       criterion = is_git_root)
+
+reeks2_90m <- find_root_file("dronebeelden", "raster_90m_v2.tif",
                        criterion = is_git_root)
 
 
-## single bands:
-raster_band1 <- raster(tif_file, band = 1)
-raster_band2 <- raster(tif_file, band = 2)
-
-
-raster_band1
-raster_band2
-
-## all together in one rasterBrick
-drone1 <- brick(tif_file)
+## all bands together in one rasterBrick
+brick_reeks1_45m <- brick(reeks1_45m)
+brick_reeks2_45m <- brick(reeks2_45m)
+brick_reeks2_90m <- brick(reeks2_90m)
 
 ```
 
 ```{r}
-drone1
+brick_reeks1_45m
+brick_reeks2_45m
+brick_reeks2_90m
 ```
+
+Voor reeks2 90m is de betekenis van de verschillende bands onduidelijk op basis van de names (raster_90m_v2.1, raster_90m_v2.2, raster_90m_v2.3, raster_90m_v2.4). 
+Er is ook geen crs opgegeven.
+Daar kan je dus best vragen om te zorgen dat het 90m beeld op dezelfde manier wordt opgeslagen als het 45m beeld.
 
 
 
@@ -103,7 +109,17 @@ gcp <- gcp %>%
 gcp <- gcp %>%
   mutate(maxhoog = parse_number(maxhoog))
 
+
+gcp
 ```
+
+```{r}
+gcp2 <- readxl::read_excel(path = find_root_file(
+  "data",
+  "Drone20200504_Validatie2.xlsx",
+  criterion = is_git_root))
+```
+
 
 
 ```{r}
