@@ -350,7 +350,7 @@ Mogelijk is het zinvol om nog een iets grotere buffer te nemen.
 Detail van buffer 20 cm, aggregatiemethode = max vergeleken met gemhoog:
 
 ```{r}
-drone_validation %>%
+p <- drone_validation %>%
   filter(buffer == 20,
          fn == "max") %>%
   ggplot() +
@@ -361,6 +361,25 @@ drone_validation %>%
   geom_smooth(aes(x = gemhoog, 
                  y = drone_hoogte_cm)) + 
   facet_wrap(buffer ~ fn, labeller = label_both)
+
+plotly::ggplotly(p)
+```
+
+```{r}
+p <- drone_validation %>%
+  filter(buffer == 20,
+         fn == "max") %>%
+  ggplot() +
+  geom_point(aes(x = gemhoog, 
+                 y = (drone_hoogte_cm - gemhoog) / gemhoog, 
+                 colour = biotooptyp)) +
+  geom_smooth(aes(x = gemhoog, 
+                 y = (drone_hoogte_cm - gemhoog) / gemhoog)) +
+  geom_hline(yintercept = 0) +
+  scale_y_continuous(labels = scales::percent) +
+  facet_wrap(buffer ~ fn, labeller = label_both)
+
+plotly::ggplotly(p)
 ```
 
 ### dronevlucht Reeks 2, 45 meter versus veldmetingen
