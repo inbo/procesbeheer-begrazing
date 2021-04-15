@@ -17,10 +17,10 @@ opts_chunk$set(echo = TRUE)
 library(raster)
 library(rprojroot)
 library(googlesheets4)
-library(tidyverse)
 library(jsonlite)
 library(sf)
 library(rasterVis)
+library(tidyverse)
 ```
 
 
@@ -182,7 +182,18 @@ ggplot() +
   coord_sf()
 ```
 
+```{r}
+library(exactextractr)
+gcp_brick_reeks2_45m <- exact_extract(x = raster(brick_reeks1_45m, layer = 6), 
+                                      y = gcp_sf %>% st_buffer(dist = 0.1),
+                                      fun = c("mean", "max"))
 
+gcp_brick_reeks2_45m_b10cm_mean <- exact_extract(
+  x = brick_reeks2_45m, 
+  y = gcp_sf %>% st_buffer(dist = 0.1),
+  fun = "mean"
+  )
+```
 
 ```{r}
 
@@ -414,6 +425,7 @@ ggplot() +
 #rasterVis::plot3D(raster(brick_reeks2_45m, layer = 6))
 # DTM model 1 m nodig voor deze visualisatie
 ```
+
 
 
 
