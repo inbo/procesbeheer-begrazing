@@ -45,3 +45,5 @@ dronebeelden/
 # html
 *.html
 
+# gitignore folder
+gitignore/
