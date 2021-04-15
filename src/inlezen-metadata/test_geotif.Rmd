@@ -1,5 +1,5 @@
 ---
-title: "Untitled"
+title: "Dronebeelden inlezen en verkennen"
 author: "Hans Van Calster"
 date: "9-6-2020"
 output: html_document
@@ -14,8 +14,7 @@ library(stars)
 library(rprojroot)
 library(googlesheets4)
 library(tidyverse)
-
-
+library(googledrive)
 ```
 
 
@@ -33,6 +32,45 @@ De eerste bedoeling is om de handmatige metingen te vergelijken met de door de d
 De tweede bedoeling is om  verschillende kaarten van de vegetatiehoogte met elkaar te vergelijken.
 
 De hamvraag is nu of het mogelijk is om op basis van het raster deze bewerkingen uit te voeren in R. Punten extraheren op de locatie van de handmatige metingen alsook rekenen met rasters?
+
+```{r}
+drive_auth_configure(api_key = "AIzaSyBXstpHk3p5MeIcpSy5NCHx34l20757waM")
+
+
+drone_ls <- drive_ls(path = "https://drive.google.com/drive/folders/1kc-ERZeAIfsOniiIs4I1nGyKopHNBw5G")
+
+download_gdrive <- function(id, name) {
+  #drive_download <- possibly(drive_download, otherwise = NULL)
+  output <- find_root_file(
+    "dronebeelden",
+    name,
+    criterion = is_git_root)
+  drive_download(file = id, 
+                 path = output)
+}
+
+walk2(.x = drone_ls$id[2],
+      .y =  drone_ls$name[2], 
+      .f = ~download_gdrive(id = .x, name = .y))
+debugonce(download_gdrive)
+```
+
+
+{
+ "error": {
+  "errors": [
+   {
+    "domain": "usageLimits",
+    "reason": "dailyLimitExceededUnreg",
+    "message": "Daily Limit for Unauthenticated Use Exceeded. Continued use requires signup.",
+    "extendedHelp": "https://code.google.com/apis/console"
+   }
+  ],
+  "code": 403,
+  "message": "Daily Limit for Unauthenticated Use Exceeded. Continued use requires signup."
+ }
+}
+
 
 
 ```{r read-tif}
