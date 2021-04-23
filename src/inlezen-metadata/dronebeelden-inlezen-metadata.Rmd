@@ -1,0 +1,237 @@
+---
+title: "Metadata dronebeelden"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+opts_chunk$set(echo = TRUE)
+
+library(raster)
+library(rprojroot)
+library(tidyverse)
+library(fs)
+source(find_root_file("src/utils/utils.R", criterion = is_git_root))
+```
+
+
+
+# Inlezen 
+
+## Digitaal oppervlakte model (dronebeelden) (Digital Surface Model DSM)
+
+
+Dronebeelden rechtstreeks vanaf gedeelde google drive via lokale sync in G:\
+
+
+Voordelen:
+
+- script blijft werken omdat iedereen naar dezelfde locatie verwijst (op voorwaarde dat G gekozen werd als schijf voor google drive lokaal te syncen)
+- download vanaf google drive gebeurd automatisch, geen authentificatie nodig (google drive for desktop zal enkel die bestanden lokaal beschikbaar maken die effectief gebruikt worden)
+
+
+```{r inlezen, warning=FALSE}
+map_procesbeheer <- get_map_procesbeheer()
+fs::dir_exists(map_procesbeheer)
+all_tif_files <- fs::dir_ls(map_procesbeheer, 
+                            recurse = TRUE, 
+                            glob = "*.tif")
+load_tif <- function(path) {
+  tifname <- basename(path)
+  tifname <- fs::path_ext_remove(tifname)
+  tifname <- make.names(tifname)
+  assign(tifname, raster::brick(path), inherits = TRUE)
+}
+walk(all_tif_files, load_tif)
+```
+
+```{r check-metadata}
+wkt(X20200504_0179201_Reeks1_45m_CC)
+names(X20200504_0179201_Reeks1_45m_CC)
+res(X20200504_0179201_Reeks1_45m_CC)
+
+
+wkt(X20200831_0179202_Ename1_DEM)
+names(X20200831_0179202_Ename1_DEM)
+res(X20200831_0179202_Ename1_DEM)
+
+plot(extent(X20200831_0179202_Ename1_DEM))
+lines(extent(X20200831_0179202_Ename2_DEM))
+lines(extent(X20200831_0179202_Ename3a_DEM))
+lines(extent(X20200831_0179202_Ename3b_DEM))
+lines(extent(X20200831_0179202_Ename3c_DEM))
+lines(extent(X20200831_0179202_Ename4_DEM))
+
+```
+
+
+
+CRS is volgens QGIS = Lambert 72, dus EPSG = 31370.
+Voor Ename zijn er 6 beelden waarvan er 3 overlappen (3a, 3b en 3c).
+
+```{r}
+X20200831_0179202_Ename1_DEM <- setMinMax(X20200831_0179202_Ename1_DEM)
+
+
+to_template_31370 <- projectExtent(X20200831_0179202_Ename1_DEM, crs = 31370)
+to_template_4326 <- projectExtent(X20200831_0179202_Ename1_DEM, crs = 4326)
+ename1 <- raster::projectRaster(X20200831_0179202_Ename1_DEM, to_template_4326)
+
+library(leaflet)
+pal = colorNumeric(
+  c("#7f007f", "#0000ff",  "#007fff", "#00ffff", "#00bf00", "#7fdf00",
+    "#ffff00", "#ff7f00", "#ff3f00", "#ff0000", "#bf0000"), 
+  ,  na.color = "transparent")
+
+sst.color = c("#7f007f", "#0000ff",  "#007fff", "#00ffff", "#00bf00", "#7fdf00",
+              "#ffff00", "#ff7f00", "#ff3f00", "#ff0000", "#bf0000")
+leaflet() %>% 
+  addTiles() %>%
+  addRasterImage(x = X20200831_0179202_Ename1_DEM , 
+                 colors = pal, 
+                 opacity = 1) %>%
+  addLegend(pal = pal, 
+            values = values(sst.tz),
+    title = "TAW")
+```
+
+
+## Digitaal terrein model (DTM)
+
+Digitaal Hoogtemodel Vlaanderen II:
+
+- https://download.vlaanderen.be/Producten/Detail?id=939&title=Digitaal_Hoogtemodel_Vlaanderen_II_DTM_raster_1_m#
+- https://www.geopunt.be/catalogus/datasetfolder/f52b1a13-86bc-4b64-8256-88cc0d1a8735
+    - Enkel downloadservice en WMS (= enkel visualisatie, geen data). 
+    - Mogelijke optie: kaartblad selecteren, zip downloaden en unzippen, raster inlezen
+- Gemakkelijkste toegang via S-schijf INBO.
+
+```{r}
+dtm <- function(wfs, extent) {
+  
+}
+```
+
+
+```{r}
+map_inbo_gis <- get_map_inbogis()
+dtm_path <- file.path(
+  map_inbo_gis, "Vlaanderen", "Hoogte", "DHMVII", 
+  "DHMVIIDTMRAS1m.tif")
+dtm <- raster(dtm_path)
+
+dtm
+```
+
+
+```{r}
+# crop dtm to drone image extent
+# and write to tif file
+dtm_crop <- crop(x = dtm, 
+                 y = X20200831_0179202_Ename1_DEM,
+                 filename = file.path(), 
+                 format = ".tif",
+                 overwrite = FALSE)
+
+```
+
+## Canopy height model (CHM)
+
+Canopy height model = digitaal oppervlaktemodel - digitaal hoogtemodel
+
+Poging 1:
+
+*In QGIS*
+
+- drone raster inlezen (DSM)
+- DTM II 1m inlezen
+- via raster -> rasterberekeningen: DSM - DTM en opslaan als geotiff, als extent de extent van DSM nemen
+
+Geschatte rekentijd voor één dronebeeld: 100 minuten.
+
+*In GRASS*
+
+```{r}
+library(link2GI) # need to install from github devtools::install_github("r-spatial/link2GI@master")
+library(rgrass7)
+library(fs)
+
+
+# install grass first: https://grass.osgeo.org/download/
+# koppel GRASS-project met R via linkGRASS7()
+# csr, extent worden overgenomen van eerste argument
+# CREATE and link to a permanent GRASS folder
+link2GI::linkGRASS7(X20200831_0179202_Ename1_DEM,
+                    gisdbase = find_root_file("dronebeelden",
+                                              criterion = is_git_root),
+                    location = "belgium",
+                    search_path = if (.Platform$OS.type == "unix") {
+                      "/usr/bin"} else NULL,
+                    use_home = TRUE)
+
+#Sys.setenv(GISRC = find_root_file("junk", criterion = is_git_root))
+#rgrass7::gmeta()
+
+# GRASS-commando's doorsturen naar GRASS met execGRASS()
+# read rasterfiles in grass sqlite db with r.in.gdal
+# this will write to the same sqlite db (needs 4Gb space)
+rasterfiles <- all_tif_files[5]
+
+
+
+# dronebeelden
+for (rasterfile in rasterfiles) {
+  try(execGRASS("r.in.gdal",
+            input = rasterfile,
+            output = path_ext_remove(path_file(rasterfile)),
+            flag = c("o")))
+}
+
+# dtm
+
+execGRASS("r.in.gdal",
+            input = dtm_crop_path,
+            output = path_ext_remove(path_file(dtm_crop_path)),
+            flag = c("o"))
+
+# substract DSM from DTM
+execGRASS("r.mapcalc",
+          expression = paste0(
+            "chm_", 
+            path_ext_remove(path_file(rasterfile)),
+            " = ", 
+            path_ext_remove(path_file(rasterfile)),
+            " - ",
+            path_ext_remove(path_file(dtm_path)), 
+            " region=intersect")
+)
+
+```
+
+
+*R*
+
+Volgens https://rpubs.com/GreatEmerald/raster-speed-benchmark
+
+zou stars sneller zijn dan raster of terra voor eenvoudige rasterberekeningen
+
+
+## NDVI 
+
+
+
+
+## GRTS master sample
+
+Zie https://inbo.github.io/n2khab/articles/v030_GRTSmh.html
+
+
+## Indelen in hoogteklassen en oppervlakte-aandelen bepalen 
+
+Mbv exactextractr.
+
+# Resources
+
+https://datacarpentry.org/r-raster-vector-geospatial/03-raster-reproject-in-r/
+
+https://semba-blog.netlify.app/12/14/2020/manipulate-and-visualize-raster-data-with-leaflet-and-tmap-in-r/
