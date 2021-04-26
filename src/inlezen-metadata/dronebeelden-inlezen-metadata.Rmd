@@ -7,7 +7,7 @@ output: html_document
 library(knitr)
 opts_chunk$set(echo = TRUE)
 
-library(raster)
+library(terra)
 library(rprojroot)
 library(tidyverse)
 library(fs)
@@ -33,67 +33,30 @@ Voordelen:
 ```{r inlezen, warning=FALSE}
 map_procesbeheer <- get_map_procesbeheer()
 fs::dir_exists(map_procesbeheer)
-all_tif_files <- fs::dir_ls(map_procesbeheer, 
+all_tif_files <- fs::dir_ls(file.path(map_procesbeheer, "Drone_geg"), 
                             recurse = TRUE, 
                             glob = "*.tif")
 load_tif <- function(path) {
   tifname <- basename(path)
   tifname <- fs::path_ext_remove(tifname)
   tifname <- make.names(tifname)
-  assign(tifname, raster::brick(path), inherits = TRUE)
+  assign(tifname, terra::rast(path), inherits = TRUE)
 }
 walk(all_tif_files, load_tif)
 ```
 
 ```{r check-metadata}
-wkt(X20200504_0179201_Reeks1_45m_CC)
-names(X20200504_0179201_Reeks1_45m_CC)
-res(X20200504_0179201_Reeks1_45m_CC)
+X20200831_0179202_Ename1_DEM
 
-
-wkt(X20200831_0179202_Ename1_DEM)
-names(X20200831_0179202_Ename1_DEM)
-res(X20200831_0179202_Ename1_DEM)
-
-plot(extent(X20200831_0179202_Ename1_DEM))
-lines(extent(X20200831_0179202_Ename2_DEM))
-lines(extent(X20200831_0179202_Ename3a_DEM))
-lines(extent(X20200831_0179202_Ename3b_DEM))
-lines(extent(X20200831_0179202_Ename3c_DEM))
-lines(extent(X20200831_0179202_Ename4_DEM))
-
+cat(crs(X20200831_0179202_Ename1_DEM))
 ```
 
-
-
-CRS is volgens QGIS = Lambert 72, dus EPSG = 31370.
-Voor Ename zijn er 6 beelden waarvan er 3 overlappen (3a, 3b en 3c).
 
 ```{r}
-X20200831_0179202_Ename1_DEM <- setMinMax(X20200831_0179202_Ename1_DEM)
-
-
-to_template_31370 <- projectExtent(X20200831_0179202_Ename1_DEM, crs = 31370)
-to_template_4326 <- projectExtent(X20200831_0179202_Ename1_DEM, crs = 4326)
-ename1 <- raster::projectRaster(X20200831_0179202_Ename1_DEM, to_template_4326)
-
-library(leaflet)
-pal = colorNumeric(
-  c("#7f007f", "#0000ff",  "#007fff", "#00ffff", "#00bf00", "#7fdf00",
-    "#ffff00", "#ff7f00", "#ff3f00", "#ff0000", "#bf0000"), 
-  ,  na.color = "transparent")
-
-sst.color = c("#7f007f", "#0000ff",  "#007fff", "#00ffff", "#00bf00", "#7fdf00",
-              "#ffff00", "#ff7f00", "#ff3f00", "#ff0000", "#bf0000")
-leaflet() %>% 
-  addTiles() %>%
-  addRasterImage(x = X20200831_0179202_Ename1_DEM , 
-                 colors = pal, 
-                 opacity = 1) %>%
-  addLegend(pal = pal, 
-            values = values(sst.tz),
-    title = "TAW")
+plot(X20200831_0179202_Ename1_DEM)
 ```
+
+
 
 
 ## Digitaal terrein model (DTM)
@@ -106,11 +69,6 @@ Digitaal Hoogtemodel Vlaanderen II:
     - Mogelijke optie: kaartblad selecteren, zip downloaden en unzippen, raster inlezen
 - Gemakkelijkste toegang via S-schijf INBO.
 
-```{r}
-dtm <- function(wfs, extent) {
-  
-}
-```
 
 
 ```{r}
@@ -118,28 +76,81 @@ map_inbo_gis <- get_map_inbogis()
 dtm_path <- file.path(
   map_inbo_gis, "Vlaanderen", "Hoogte", "DHMVII", 
   "DHMVIIDTMRAS1m.tif")
-dtm <- raster(dtm_path)
+dtm1m <- terra::rast(dtm_path)
 
-dtm
-```
+dtm1m
 
-
-```{r}
-# crop dtm to drone image extent
-# and write to tif file
-dtm_crop <- crop(x = dtm, 
-                 y = X20200831_0179202_Ename1_DEM,
-                 filename = file.path(), 
-                 format = ".tif",
-                 overwrite = FALSE)
+#all.equal(crs(dtm1m), crs(X20200831_0179202_Ename1_DEM))
 
 ```
+
+
 
 ## Canopy height model (CHM)
 
 Canopy height model = digitaal oppervlaktemodel - digitaal hoogtemodel
 
-Poging 1:
+*R*
+
+
+```{r}
+calc_chm <- function(dsm, dtm, overwrite = FALSE) {
+  
+  
+  # prelim check
+  destination <- file.path(map_procesbeheer, "chm")
+  
+  if (!dir.exists(destination)) {
+    dir.create(destination, recursive = TRUE)
+  }
+  
+  tifname <- paste0(gsub("DEM", "CHM", dsm@ptr$names), ".tif")
+  
+  if (file.exists(file.path(destination, tifname)) && !overwrite) {
+    stop(paste0("CHM for ", dsm, " already exists"))
+  }
+  
+  # crop dtm to drone image extent
+  floor_extent_dsm <- floor(ext(dsm))
+  ext(dsm) <- floor_extent_dsm
+  dtm_crop <- crop(dtm, dsm)
+  
+  # disaggregate dtm to 0.025 x 0.025 resolution
+  dtm_crop <- disaggregate(dtm_crop, fact = 1/0.025)
+  
+  # resample dsm so it has same raster as dtm_crop
+  dsm <- terra::resample(dsm, dtm_crop)
+  
+  # wkt string overschrijven (zelfde crs, maar verschillende representatie)
+  crs(dsm) <- crs(dtm_crop)
+  
+  # calculate CHM
+  chm <- dsm - dtm_crop
+  
+  # Write the rasterfile
+  
+  terra::writeRaster(x = chm, 
+              filename = file.path(destination, tifname), 
+              gdal = c("COMPRESS=LZW", "TFW=YES"), 
+              overwrite = overwrite)
+
+}
+```
+
+
+```{r}
+calc_chm(dsm = X20200831_0179202_Ename1_DEM, dtm = dtm1m) #enkele minuten
+```
+
+```{r}
+#check resultaat
+load_tif(path = file.path(map_procesbeheer, "chm", "20200831_0179202_Ename1_CHM.tif"))
+
+X20200831_0179202_Ename1_CHM
+
+plot(X20200831_0179202_Ename1_CHM)
+```
+
 
 *In QGIS*
 
@@ -208,12 +219,6 @@ execGRASS("r.mapcalc",
 
 ```
 
-
-*R*
-
-Volgens https://rpubs.com/GreatEmerald/raster-speed-benchmark
-
-zou stars sneller zijn dan raster of terra voor eenvoudige rasterberekeningen
 
 
 ## NDVI 
