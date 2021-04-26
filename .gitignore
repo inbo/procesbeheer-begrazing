@@ -41,6 +41,7 @@ vignettes/*.pdf
 # tif bestand
 *.tif
 dronebeelden/
+n2khab_data/
 
 # html
 *.html

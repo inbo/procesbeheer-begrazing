@@ -11,6 +11,7 @@ library(terra)
 library(rprojroot)
 library(tidyverse)
 library(fs)
+
 source(find_root_file("src/utils/utils.R", criterion = is_git_root))
 ```
 
@@ -149,12 +150,13 @@ load_tif(path = file.path(map_procesbeheer, "chm", "20200831_0179202_Ename1_CHM.
 X20200831_0179202_Ename1_CHM
 
 plot(X20200831_0179202_Ename1_CHM)
+
 ```
 
 
 ## NDVI 
 
-
+Bron: false colour-NIR orthofoto van Informatie Vlaanderen (2018)
 
 
 ## GRTS master sample
@@ -162,9 +164,57 @@ plot(X20200831_0179202_Ename1_CHM)
 Zie https://inbo.github.io/n2khab/articles/v030_GRTSmh.html
 
 
+```{r}
+if (!file.exists("n2khab_data")) {
+  n2khab::fileman_folders(root = "git")
+  dir.create("n2khab_data/10_raw/GRTSmaster_habitats")
+  n2khab::download_zenodo(doi = "10.5281/zenodo.2682323",
+                          path = "n2khab_data/10_raw/GRTSmaster_habitats")
+}
+
+grts_mh <- n2khab::read_GRTSmh()
+grts_mh <- terra::rast(grts_mh)
+```
+
+
 ## Indelen in hoogteklassen en oppervlakte-aandelen bepalen 
 
 Mbv exactextractr.
+
+```{r}
+calc_area_classes <- function(chm, cuts, grts_raster, bufferdist) {
+  
+  # buffer points
+  grts_buffer <- grts_raster %>%
+    as.points() %>%
+    sf::st_as_sf() %>%
+    sf::st_buffer(dist = bufferdist)
+  
+  # reclassify canopy heights
+  chm_classes <- classify(chm, cuts, include.lowest = TRUE)
+  
+  # convert to RasterLayer
+  chm_classes <- raster::raster(chm_classes)
+  
+  # extract area covered by classes within buffer
+  chm_class_areas <- exactextractr::exact_extract(
+    chm_classes, 
+    grts_buffer,
+    function(values, coverage_fraction)
+      sum(values * coverage_fraction, na.rm = TRUE))
+  
+  return(chm_class_areas)
+}
+```
+
+
+```{r}
+height_classification <- c(0, 0.07, 0.15, 0.25, 0.45, 0.70, 1, 1.5, 2, 2.75, 4, 8)
+ndvi_classification <- c(0, 0.1, 0.2, 0.3, 0.4)
+bufferdistance <- 5
+
+```
+
 
 # Resources
 
