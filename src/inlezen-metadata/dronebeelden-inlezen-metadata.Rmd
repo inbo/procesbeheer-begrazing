@@ -11,7 +11,9 @@ library(terra)
 library(rprojroot)
 library(tidyverse)
 library(fs)
-
+library(httr)
+library(xml2)
+library(dplyr)
 source(find_root_file("src/utils/utils.R", criterion = is_git_root))
 ```
 
@@ -99,7 +101,7 @@ calc_chm <- function(dsm, dtm, overwrite = FALSE) {
   
   
   # prelim check
-  destination <- file.path(map_procesbeheer, "chm")
+  destination <- file.path(get_map_procesbeheer(), "chm")
   
   if (!dir.exists(destination)) {
     dir.create(destination, recursive = TRUE)
@@ -108,7 +110,8 @@ calc_chm <- function(dsm, dtm, overwrite = FALSE) {
   tifname <- paste0(gsub("DEM", "CHM", dsm@ptr$names), ".tif")
   
   if (file.exists(file.path(destination, tifname)) && !overwrite) {
-    stop(paste0("CHM for ", dsm, " already exists"))
+    chm <- terra::rast(file.path(destination, tifname))
+    return(chm)
   }
   
   # crop dtm to drone image extent
@@ -129,34 +132,152 @@ calc_chm <- function(dsm, dtm, overwrite = FALSE) {
   chm <- dsm - dtm_crop
   
   # Write the rasterfile
-  
   terra::writeRaster(x = chm, 
               filename = file.path(destination, tifname), 
               gdal = c("COMPRESS=LZW", "TFW=YES"), 
               overwrite = overwrite)
 
+  return(chm)
 }
 ```
 
 
 ```{r}
-calc_chm(dsm = X20200831_0179202_Ename1_DEM, dtm = dtm1m) #enkele minuten
-```
+test_chm <- calc_chm(dsm = X20200831_0179202_Ename1_DEM, dtm = dtm1m) #enkele minuten
 
-```{r}
-#check resultaat
-load_tif(path = file.path(map_procesbeheer, "chm", "20200831_0179202_Ename1_CHM.tif"))
+plot(test_chm)
 
-X20200831_0179202_Ename1_CHM
-
-plot(X20200831_0179202_Ename1_CHM)
-
+test_chm
 ```
 
 
 ## NDVI 
 
 Bron: false colour-NIR orthofoto van Informatie Vlaanderen (2018)
+
+https://geoservices.informatievlaanderen.be/raadpleegdiensten/OMZ/wms
+
+https://www.geopunt.be/catalogus/datasetfolder/5c3e8dd5-587a-4bab-b88a-ab3c9a2b6709
+
+https://inspire.informatievlaanderen.be/overdrachtdiensten/oi-omz/wcs
+
+Enkel CIR nodig om NDVI te berekenen. 
+Zie https://eo.belspo.be/nl/kleurencomposieten:
+
+> Een bijzonder doeltreffende kleurencomposiet in teledetectie is "valse-kleuren infrarood" beeld. Hierin worden de banden van nabij infrarood, rood en groen van de sensor geassocieerd met de kleuren rood, groen en blauw van het scherm. 
+
+NDVI = (NIR - RED) / (NIR + RED)
+
+De mapping is dus:
+
+- NIR = nabij-infrarood = band1 = "rood op het scherm"
+- RED = rood = band2 = "groen op het scherm"
+
+```{r}
+calc_ndvi <- function(dsm, version = c("1.0.0", "2.0.1"), overwrite = FALSE) {
+
+    
+  # prelim check
+  version <- match.arg(version)
+  
+  destination <- file.path(get_map_procesbeheer(), "ndvi")
+  
+  if (!dir.exists(destination)) {
+    dir.create(destination, recursive = TRUE)
+  }
+  
+  tifname <- paste0(gsub("DEM", "NDVI", dsm@ptr$names), ".tif")
+  
+  if (file.exists(file.path(destination, tifname)) && !overwrite) {
+    ndvi <- terra::rast(file.path(destination, tifname))
+    return(ndvi)
+  }
+  
+  # get extent from dsm
+  floor_extent_dsm <- floor(ext(dsm))
+
+  bbox_vec <- as.vector(floor_extent_dsm)
+  
+  # wcs service
+  wcs <- "https://inspire.informatievlaanderen.be/overdrachtdiensten/oi-omz/wcs"
+  url <- parse_url(wcs)
+  
+  #url$query <- list(service = "wcs",
+  #                  version = "2.0.1", 
+  #                  request = "DescribeCoverage",
+  #                  CoverageId = "OI.OrthoimageCoverage.OMZ.CIR")
+  if (version == "2.0.1") {
+    stop(paste0("code for version = ", version, "is not yet working"))
+    url$query <- list(SERVICE = "WCS",
+                    VERSION = version, 
+                    REQUEST = "GetCoverage",
+                    COVERAGEID = "OI.OrthoimageCoverage.OMZ.CIR",
+                    SUBSETTINGCRS = "http://www.opengis.net/def/crs/EPSG/0/31370", 
+                    SUBSET = paste0("x(",
+                                    bbox_vec["xmin"], 
+                                    ",",
+                                    bbox_vec["xmax"],")"),
+                    SUBSET = paste0("y(",
+                                    bbox_vec["ymin"],
+                                    ",",
+                                    bbox_vec["ymax"],")")
+                  #  ,format = "image/tiff", #optional
+                  #  OUTPUTCRS = "EPSG:31370" #equal to SUBSETTINGCRS if no outputCrs defined
+                    )
+  request <- build_url(url)
+  }
+  
+  if (version == "1.0.0") {
+    resolution <- 0.4
+    result_width <- (bbox_vec["xmax"] - bbox_vec["xmin"]) / resolution
+    result_height <- (bbox_vec["ymax"] - bbox_vec["ymin"]) / resolution
+    
+    url$query <- list(SERVICE = "WCS",
+                      VERSION = version, 
+                      REQUEST = "GetCoverage",
+                      COVERAGE = "OI.OrthoimageCoverage.OMZ.CIR",
+                      CRS = "EPSG:31370", 
+                      BBOX = paste(
+                        bbox_vec["xmin"],
+                        bbox_vec["ymin"],
+                        bbox_vec["xmax"],
+                        bbox_vec["ymax"],
+                        sep = ","),
+                      WIDTH = result_width,
+                      HEIGHT = result_height,
+                      FORMAT = "geoTIFF",
+                      RESPONSE_CRS = "EPSG:31370"
+    )
+  request <- build_url(url)
+  }
+  
+  file <- tempfile(fileext = ".tif")
+  GET(url = request, 
+    write_disk(file))
+  
+  cir_raster <- terra::rast(file)
+  nir <- cir_raster[[1]]
+  red <- cir_raster[[2]]
+  ndvi <- (nir - red) / (nir + red)
+  
+  # Write the rasterfile
+  terra::writeRaster(x = ndvi, 
+              filename = file.path(destination, tifname), 
+              gdal = c("COMPRESS=LZW", "TFW=YES"), 
+              overwrite = overwrite)
+
+  return(ndvi)
+
+}
+
+```
+
+```{r}
+test_ndvi <- calc_ndvi(dsm = X20200831_0179202_Ename1_DEM)
+plot(test_ndvi)
+test_ndvi
+```
+
 
 
 ## GRTS master sample
@@ -174,44 +295,101 @@ if (!file.exists("n2khab_data")) {
 
 grts_mh <- n2khab::read_GRTSmh()
 grts_mh <- terra::rast(grts_mh)
+terra::crs(grts_mh) <- "EPSG:31370"
 ```
 
+```{r}
+plot(grts_mh)
+```
 
 ## Indelen in hoogteklassen en oppervlakte-aandelen bepalen 
 
 Mbv exactextractr.
 
 ```{r}
-calc_area_classes <- function(chm, cuts, grts_raster, bufferdist) {
+calc_areas <- function(df, raster) {
+  list_df <- exactextractr::exact_extract(x = raster, y = df)
+  area_for_one <- function(x) {
+    # calculate area of one rastercell
+    cellarea <- res(raster)[1] * res(raster)[2]
+    x %>%
+      group_by(value) %>%
+      summarise(area_m2 = sum(coverage_fraction * cellarea),
+                .groups = "drop_last")
+  }
+  out <- map(list_df, area_for_one)
+  return(out)
+}
+
+
+calc_bufferstats <- function(
+  raster, 
+  cuts, 
+  grts_raster, 
+  bufferdist) {
   
   # buffer points
   grts_buffer <- grts_raster %>%
+    crop(raster) %>%
     as.points() %>%
-    sf::st_as_sf() %>%
+    as.data.frame(geom = TRUE) %>%
+    sf::st_as_sf(wkt = "geometry",
+                 crs = "epsg:31370") %>%
     sf::st_buffer(dist = bufferdist)
   
-  # reclassify canopy heights
-  chm_classes <- classify(chm, cuts, include.lowest = TRUE)
+  # reclassify raster
+  raster_classes <- classify(raster, cuts, include.lowest = TRUE)
   
   # convert to RasterLayer
-  chm_classes <- raster::raster(chm_classes)
+  raster_classes <- raster::raster(raster_classes)
   
-  # extract area covered by classes within buffer
-  chm_class_areas <- exactextractr::exact_extract(
-    chm_classes, 
-    grts_buffer,
-    function(values, coverage_fraction)
-      sum(values * coverage_fraction, na.rm = TRUE))
-  
-  return(chm_class_areas)
-}
+  # extract values and coverage_fraction of raster
+  # per chunk of chunksize locations to avoid out of memory in case of large buffers
+  result <- grts_buffer %>%
+    select(GRTSmaster_habitats) %>%
+    nest(data = everything()) %>%
+    mutate(areas = map(.x = data,
+                       .f = calc_areas,
+                       raster = raster_classes))
+
+  result <- result %>%
+    unnest(c(data, areas)) %>%
+    unnest(areas) %>%
+    select(-geometry) %>%
+    ungroup() %>%
+    rename(class = value) %>%
+    mutate(proportion = area_m2 / (pi * bufferdist^2),
+           bufferdist = bufferdist)
+  return(result)
+  }
 ```
 
 
 ```{r}
-height_classification <- c(0, 0.07, 0.15, 0.25, 0.45, 0.70, 1, 1.5, 2, 2.75, 4, 8)
-ndvi_classification <- c(0, 0.1, 0.2, 0.3, 0.4)
+height_classification <- c(-Inf, 0, 0.07, 0.15, 0.25, 0.45, 0.70, 1, 1.5, 2, 2.75, 4, 8, +Inf)
+ndvi_classification <- c(-1, 0, 0.1, 0.2, 0.3, 0.4, 1)
 bufferdistance <- 5
+
+test_ndvi_classes <- classify(test_ndvi, ndvi_classification, include.lowest = TRUE)
+plot(test_ndvi)
+plot(raster_classes)
+
+test_chm_classes <- classify(test_chm, height_classification, include.lowest = TRUE)
+plot(test_chm)
+plot(test_chm_classes)
+
+
+
+debugonce(calc_bufferstats)
+ndvi_ac <- calc_bufferstats(raster = test_ndvi, 
+                  cuts = ndvi_classification,
+                  grts_raster = grts_mh,
+                  bufferdist = bufferdistance)
+
+chm_ac <- calc_bufferstats(raster = test_chm, 
+                  cuts = height_classification,
+                  grts_raster = grts_mh,
+                  bufferdist = bufferdistance)
 
 ```
 
