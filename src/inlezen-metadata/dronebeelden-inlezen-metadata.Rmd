@@ -40,12 +40,6 @@ fs::dir_exists(map_procesbeheer)
 all_tif_files <- fs::dir_ls(file.path(map_procesbeheer, "Drone_geg"), 
                             recurse = TRUE, 
                             glob = "*.tif")
-load_tif <- function(path) {
-  tifname <- basename(path)
-  tifname <- fs::path_ext_remove(tifname)
-  tifname <- make.names(tifname)
-  assign(tifname, terra::rast(path), inherits = TRUE)
-}
 walk(all_tif_files, load_tif)
 ```
 
@@ -67,12 +61,9 @@ plot(X20200831_0179202_Ename1_DEM)
 
 Digitaal Hoogtemodel Vlaanderen II:
 
-- https://download.vlaanderen.be/Producten/Detail?id=939&title=Digitaal_Hoogtemodel_Vlaanderen_II_DTM_raster_1_m#
-- https://www.geopunt.be/catalogus/datasetfolder/f52b1a13-86bc-4b64-8256-88cc0d1a8735
-    - Enkel downloadservice en WMS (= enkel visualisatie, geen data). 
-    - Mogelijke optie: kaartblad selecteren, zip downloaden en unzippen, raster inlezen
-- Gemakkelijkste toegang via S-schijf INBO.
+Zie WCS service:
 
+https://inspire.informatievlaanderen.be/overdrachtdiensten/el-dtm/wcs?request=GetCapabilities
 
 
 ```{r}
