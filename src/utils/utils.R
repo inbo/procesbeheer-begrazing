@@ -18,3 +18,7 @@ get_map_inbogis <- function() {
   }
   return(Sys.getenv("MAP_INBOGIS"))
 }
+
+
+
+
