@@ -156,6 +156,17 @@ terra::crs(grts_mh) <- "EPSG:31370"
 
 ```{r}
 plot(grts_mh)
+
+#detail
+grts_detail <- grts_mh %>%
+  crop(ext(c(100000,100200,175000,175200)))
+grts_detail_points <- as.points(grts_detail)
+
+# check dat as.points() de centroïden geeft
+plot(grts_detail)
+points(grts_detail_points)
+
+
 ```
 
 ## Indelen in klassen en oppervlakte-aandelen bepalen 
