@@ -140,7 +140,9 @@ if (!file.exists("n2khab_data")) {
 }
 
 grts_mh <- n2khab::read_GRTSmh()
-grts_mh <- terra::rast(grts_mh)
+grts_mh <- terra::rast(grts_mh) 
+# terra:rast reads crs from the tif file, not from the grts_mh object
+# need to manually replace by correct crs representation
 terra::crs(grts_mh) <- "EPSG:31370"
 ```
 
@@ -161,20 +163,25 @@ points(grts_detail_points)
 
 ## Indelen in klassen en oppervlakte-aandelen bepalen 
 
-Mbv exactextractr.
+Mbv exactextractr oppervlakte-aandelen bepalen in buffers rond grts punten.
 
 
 
 ```{r}
-height_classification <- c(-Inf, 0, 0.07, 0.15, 0.25, 0.45, 0.70, 1, 1.5, 2, 2.75, 4, 8, +Inf)
+height_classification <- c(-Inf, 0, 0.07, 0.15, 0.25, 0.45, 0.70, 1, 1.5, 2,
+                           2.75, 4, 8, +Inf)
 ndvi_classification <- c(-1, 0, 0.1, 0.2, 0.3, 0.4, 1)
 bufferdistance <- 5
 
-test_ndvi_classes <- classify(test_ndvi, ndvi_classification, include.lowest = TRUE)
+test_ndvi_classes <- classify(test_ndvi, 
+                              ndvi_classification,
+                              include.lowest = TRUE)
 plot(test_ndvi)
 plot(raster_classes)
 
-test_chm_classes <- classify(test_chm, height_classification, include.lowest = TRUE)
+test_chm_classes <- classify(test_chm,
+                             height_classification,
+                             include.lowest = TRUE)
 plot(test_chm)
 plot(test_chm_classes)
 
