@@ -54,9 +54,7 @@ Git is niet geschikt voor het opslaan en delen van grote (binaire) bestanden, of
 
 Omdat binnen dit project, gebruik wordt gemaakt van dronebeelden (tif bestanden van enkele gigabyte), zullen we gebruik maken van een gedeelde google drive folder. 
 
-Met behulp van het `googledrive` package, kunnen deze bestanden gedownload worden naar de map `dronebeelden/`. 
-Alle bestanden in deze map worden genegeerd door het versiebeheer. 
-
+Met behulp van google drive voor desktop, kunnen deze bestanden gesynchroniseerd worden op je harde schijf en kunnen ze vanaf deze locatie ingelezen worden in R.
 
 ## Welke mappen en bestanden staan niet onder versiebeheer?
 

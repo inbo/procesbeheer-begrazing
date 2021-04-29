@@ -1,5 +1,5 @@
 ---
-title: "Metadata dronebeelden"
+title: "Verkenning inlezen en rekenen met dronebeelden"
 output: html_document
 ---
 

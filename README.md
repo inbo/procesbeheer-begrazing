@@ -7,14 +7,19 @@ Langetermijn-monitoring van de processen in kerngebieden die
 representatief zijn voor onbeheerde climaxvegetaties of door begrazing
 gestuurde mozaïeklandschappen
 
-Project dat test welke fouten er zijn tussen vegetatiehoogtekaarten van herhaalde vluchten en tussen vegetatiehoogtekaarten en manuele vegetatiehoogtemetingen Het doel van deze proef is om na te gaan of fotografische beelden, ingezameld via drones, kunnen gebruikt worden om de vegetatiestructuur van open biotopen in onze biogeografische regio te onderzoeken. We gaan na of de beeldverwerkingstechniek: fotogrammetrie, en meer specifiek SfM modellering, kan gebruikt worden om complexe vegetatiestructuren die ontstaan onder extensieve begrazing in kaart te brengen. Het potentieel van deze techniek voor lage vegetatie, met een hoge ruimtelijke heterogeniteit en structurele complexiteit werd o.a. al aangetoond door (Fraser et al. 2016) voor arctische toendra vegetaties. Uit deze proef willen we leren om zo een goede staalnamestrategie uit te werken voor de onderzoeksgebieden. Specifiek heeft deze proef vijf doelstelingen: Doelstelling 1) Bepalen wat de optimale vlieghoogte is in functie van de gewenste nauwkeurigheid van het CHM (canopy height model) en de te bemonsteren oppervlakte; Doelstelling 2) Een geschikte methodiek ontwikkelen voor het meten van de vegetatiehoogte op het terrein zodat deze terreinmetingen kunnen gebruikt worden om de drone-data te valideren; Doelstelling 3) Nagaan wat de verschillen in x-, y- en z-richting zijn tussen twee vluchten met dezelfde vluchtparameters als gevolg van omgevingsfactoren zoals wind en de herhaling op zich; Doelstelling 4) Verklaren van de overeenstemming/verschillen tussen de CHM’s (Conopy Height Modellen), gemaakt via fotogrammetrische verwerking en de veldinventarisatie van de vegetatiehoogte; Doelstelling 5) Nagaan welke grootte van vegetatiehoogteverschillen kunnen gedetecteerd worden in opeenvolgende vluchten met dezelfde vluchtparameters en onder vergelijkbare omgevingscondities.
-
 ## Structuur van de repository
 
     #> .
     #> +-- data
     #> +-- dronebeelden
+    #> +-- gitignore
+    #> +-- n2khab_data
+    #> |   +-- 10_raw
+    #> |   \-- 20_processed
     #> \-- src
+    #>     +-- inlezen-metadata
+    #>     +-- utils
+    #>     \-- validatie
 
 ## De repository lokaal installeren
 
@@ -52,9 +57,9 @@ Omdat binnen dit project, gebruik wordt gemaakt van dronebeelden (tif
 bestanden van enkele gigabyte), zullen we gebruik maken van een gedeelde
 google drive folder.
 
-Met behulp van het `googledrive` package, kunnen deze bestanden
-gedownload worden naar de map `dronebeelden/`. Alle bestanden in deze
-map worden genegeerd door het versiebeheer.
+Met behulp van google drive voor desktop, kunnen deze bestanden
+gesynchroniseerd worden op je harde schijf en kunnen ze vanaf deze
+locatie ingelezen worden in R.
 
 ## Welke mappen en bestanden staan niet onder versiebeheer?
 
