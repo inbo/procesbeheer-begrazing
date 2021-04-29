@@ -1,6 +1,92 @@
+#' Get a layer from a web coverage service within a bounding box
+#'
+get_wcs_layer <- function(wcs = c("dtm", "omz"),
+                          bbox, #xmin, xmax, ymin, ymax
+                          layername,
+                          resolution,
+                          crs = "EPSG:31370",
+                          version = c("1.0.0", "2.0.1")) {
+  # prelim check
+  version <- match.arg(version)
+  wcs <- match.arg(wcs)
+
+  # set url
+  wcs <- ifelse(
+    wcs == "omz",
+    "https://inspire.informatievlaanderen.be/overdrachtdiensten/oi-omz/wcs",
+    "https://inspire.informatievlaanderen.be/overdrachtdiensten/el-dtm/wcs"
+  )
+
+  assertthat::assert_that(is.character(layername))
+  assertthat::assert_that(is.character(crs))
+  assertthat::assert_that(
+    is.vector(bbox, mode = "numeric"),
+    length(bbox) == 4)
+
+  names(bbox) <- c("xmin", "xmax", "ymin", "ymax")
+
+  assertthat::assert_that(is.numeric(resolution))
+
+  # build url request
+  url <- parse_url(wcs)
+
+  if (version == "2.0.1") {
+    stop(paste0("code for version = ", version, "is not yet working"))
+    url$query <- list(SERVICE = "WCS",
+                      VERSION = version,
+                      REQUEST = "GetCoverage",
+                      COVERAGEID = layername,
+                      SUBSETTINGCRS = crs,
+                      SUBSET = paste0("x(",
+                                      bbox["xmin"],
+                                      ",",
+                                      bbox["xmax"],")"),
+                      SUBSET = paste0("y(",
+                                      bbox["ymin"],
+                                      ",",
+                                      bbox["ymax"],")")
+    )
+    request <- build_url(url)
+  }
+
+  if (version == "1.0.0") {
+    result_width <- (bbox["xmax"] - bbox["xmin"]) / resolution
+    result_height <- (bbox["ymax"] - bbox["ymin"]) / resolution
+
+    url$query <- list(SERVICE = "WCS",
+                      VERSION = version,
+                      REQUEST = "GetCoverage",
+                      COVERAGE = layername,
+                      CRS = crs,
+                      BBOX = paste(
+                        bbox["xmin"],
+                        bbox["ymin"],
+                        bbox["xmax"],
+                        bbox["ymax"],
+                        sep = ","),
+                      WIDTH = result_width,
+                      HEIGHT = result_height,
+                      FORMAT = "geoTIFF",
+                      RESPONSE_CRS = crs
+    )
+    request <- build_url(url)
+  }
+
+  file <- tempfile(fileext = ".tif")
+  GET(url = request,
+      write_disk(file))
+
+  raster <- terra::rast(file)
+  return(raster)
+}
+
+
+
 #' Calculate a canopy height model from a digital surface model and a digital
 #' terrain model
-calc_chm <- function(dsm, dtm, overwrite = FALSE) {
+#'
+#' The digital terrain model is obtained from a web coverage service
+calc_chm <- function(dsm, overwrite = FALSE) {
 
 
   # prelim check
@@ -17,10 +103,18 @@ calc_chm <- function(dsm, dtm, overwrite = FALSE) {
     return(chm)
   }
 
-  # crop dtm to drone image extent
+  # get drone image extent
   floor_extent_dsm <- floor(ext(dsm))
   ext(dsm) <- floor_extent_dsm
-  dtm_crop <- crop(dtm, dsm)
+
+  bbox_vec <- as.vector(floor_extent_dsm)
+
+  # get dtm image
+  dtm_crop <- get_wcs_layer(
+    wcs = "dtm",
+    bbox = bbox_vec,
+    layername = "EL.GridCoverage.DTM",
+    resolution = 1)
 
   # disaggregate dtm to 0.025 x 0.025 resolution
   dtm_crop <- disaggregate(dtm_crop, fact = 1/0.025)
@@ -44,17 +138,19 @@ calc_chm <- function(dsm, dtm, overwrite = FALSE) {
 }
 
 
+
+
+
 #' Calculate normalized difference vegetation index (NDVI) from a false-colour
 #' infrared image
 #'
 #' A digital surface model (drone image) is used as input to determine the
 #' extent for which ndvi is needed.
 #' The false-colour infrared image is obtained via a web coverage service (WCS).
-calc_ndvi <- function(dsm, version = c("1.0.0", "2.0.1"), overwrite = FALSE) {
+calc_ndvi <- function(dsm, overwrite = FALSE) {
 
 
   # prelim check
-  version <- match.arg(version)
 
   destination <- file.path(get_map_procesbeheer(), "ndvi")
 
@@ -74,64 +170,11 @@ calc_ndvi <- function(dsm, version = c("1.0.0", "2.0.1"), overwrite = FALSE) {
 
   bbox_vec <- as.vector(floor_extent_dsm)
 
-  # wcs service
-  wcs <- "https://inspire.informatievlaanderen.be/overdrachtdiensten/oi-omz/wcs"
-  url <- parse_url(wcs)
-
-  #url$query <- list(service = "wcs",
-  #                  version = "2.0.1",
-  #                  request = "DescribeCoverage",
-  #                  CoverageId = "OI.OrthoimageCoverage.OMZ.CIR")
-  if (version == "2.0.1") {
-    stop(paste0("code for version = ", version, "is not yet working"))
-    url$query <- list(SERVICE = "WCS",
-                      VERSION = version,
-                      REQUEST = "GetCoverage",
-                      COVERAGEID = "OI.OrthoimageCoverage.OMZ.CIR",
-                      SUBSETTINGCRS = "http://www.opengis.net/def/crs/EPSG/0/31370",
-                      SUBSET = paste0("x(",
-                                      bbox_vec["xmin"],
-                                      ",",
-                                      bbox_vec["xmax"],")"),
-                      SUBSET = paste0("y(",
-                                      bbox_vec["ymin"],
-                                      ",",
-                                      bbox_vec["ymax"],")")
-                      #  ,format = "image/tiff", #optional
-                      #  OUTPUTCRS = "EPSG:31370" #equal to SUBSETTINGCRS if no outputCrs defined
-    )
-    request <- build_url(url)
-  }
-
-  if (version == "1.0.0") {
-    resolution <- 0.4
-    result_width <- (bbox_vec["xmax"] - bbox_vec["xmin"]) / resolution
-    result_height <- (bbox_vec["ymax"] - bbox_vec["ymin"]) / resolution
-
-    url$query <- list(SERVICE = "WCS",
-                      VERSION = version,
-                      REQUEST = "GetCoverage",
-                      COVERAGE = "OI.OrthoimageCoverage.OMZ.CIR",
-                      CRS = "EPSG:31370",
-                      BBOX = paste(
-                        bbox_vec["xmin"],
-                        bbox_vec["ymin"],
-                        bbox_vec["xmax"],
-                        bbox_vec["ymax"],
-                        sep = ","),
-                      WIDTH = result_width,
-                      HEIGHT = result_height,
-                      FORMAT = "geoTIFF",
-                      RESPONSE_CRS = "EPSG:31370"
-    )
-    request <- build_url(url)
-  }
-
-  file <- tempfile(fileext = ".tif")
-  GET(url = request,
-      write_disk(file))
-
-  cir_raster <- terra::rast(file)
+  # get cir raster
+  cir_raster <- get_wcs_layer(wcs = "omz",
+                              bbox = bbox_vec,
+                              layername = "OI.OrthoimageCoverage.OMZ.CIR",
+                              resolution = 0.4)
   nir <- cir_raster[[1]]
   red <- cir_raster[[2]]
   ndvi <- (nir - red) / (nir + red)
