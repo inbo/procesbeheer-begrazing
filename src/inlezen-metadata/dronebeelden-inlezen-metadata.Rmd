@@ -14,6 +14,7 @@ library(fs)
 library(httr)
 library(xml2)
 library(dplyr)
+library(sf)
 source(find_root_file("src/utils/utils.R", criterion = is_git_root))
 source(find_root_file("src/utils/geocomputations.R", criterion = is_git_root))
 ```
@@ -22,8 +23,12 @@ source(find_root_file("src/utils/geocomputations.R", criterion = is_git_root))
 
 # Inlezen 
 
+
+
 ## Digitaal oppervlakte model (dronebeelden) (Digital Surface Model DSM)
 
+
+### Rasterbeelden
 
 Dronebeelden rechtstreeks vanaf gedeelde google drive via lokale sync in G:\
 
@@ -55,6 +60,32 @@ plot(X20200831_0179202_Ename1_DEM)
 ```
 
 
+### Dronevlucht polygonen
+
+```{r droneblokken}
+droneblokken <- read_sf(
+  file.path(
+    map_procesbeheer, "droneblokken", "20210429_DroneblokProcesbeheer.shp"
+    ), crs = 31370
+  )
+```
+
+```{r}
+plot_gebied <- function(data, gebied) {
+  data %>%
+    ggplot() +
+    geom_sf() +
+    labs(title = gebied)
+}
+
+plot_df <- droneblokken %>%
+  group_by(Gebied) %>%
+  nest() %>%
+  mutate(plot = map2(data, Gebied, plot_gebied))
+
+plot_df$plot
+```
+
 
 
 ## Digitaal terrein model (DTM)
@@ -67,15 +98,21 @@ https://inspire.informatievlaanderen.be/overdrachtdiensten/el-dtm/wcs?request=Ge
 
 
 ```{r}
-map_inbo_gis <- get_map_inbogis()
-dtm_path <- file.path(
-  map_inbo_gis, "Vlaanderen", "Hoogte", "DHMVII", 
-  "DHMVIIDTMRAS1m.tif")
-dtm1m <- terra::rast(dtm_path)
+# voorbeeldje
+bbox_vec <- X20200831_0179202_Ename1_DEM %>%
+  ext() %>%
+  floor() %>%
+  as.vector()
 
-dtm1m
+dtm1m <- get_wcs_layer(
+  wcs = "dtm", 
+  bbox = bbox_vec,
+  layername = "EL.GridCoverage.DTM", 
+  resolution = 1)
 
 #all.equal(crs(dtm1m), crs(X20200831_0179202_Ename1_DEM))
+
+plot(dtm1m)
 
 ```
 
@@ -91,8 +128,26 @@ Canopy height model = digitaal oppervlaktemodel - digitaal hoogtemodel
 ```{r}
 test_chm <- calc_chm(dsm = X20200831_0179202_Ename1_DEM) #enkele minuten
 
-plot(test_chm)
 test_chm
+
+plot(test_chm)
+
+# opgepast! naam van blok (EN2) correspondeert niet met naam van tif bestand Ename1
+rasterVis::gplot(test_chm) +
+  geom_tile(aes(fill = value)) +
+  scale_fill_gradient(low = 'white', high = 'blue') +
+  geom_sf(data = droneblokken %>%
+            filter(Gebied == "Ename"),
+          aes(colour = naam), 
+          fill = NA,
+          inherit.aes = FALSE)
+
+
+```
+
+
+```{r plot3d, eval=FALSE}
+rasterVis::plot3D(raster::raster(test_chm))
 ```
 
 

@@ -36,17 +36,25 @@ get_wcs_layer <- function(wcs = c("dtm", "omz"),
                       VERSION = version,
                       REQUEST = "GetCoverage",
                       COVERAGEID = layername,
-                      SUBSETTINGCRS = crs,
-                      SUBSET = paste0("x(",
+                      CRS = crs,
+                      SUBSET = paste0("x,http://www.opengis.net/def/crs/EPSG/0/31370(",
                                       bbox["xmin"],
                                       ",",
                                       bbox["xmax"],")"),
-                      SUBSET = paste0("y(",
+                      SUBSET = paste0("y,http://www.opengis.net/def/crs/EPSG/0/31370(",
                                       bbox["ymin"],
                                       ",",
-                                      bbox["ymax"],")")
+                                      bbox["ymax"],")"),
+                      #SCALEFACTOR = 50,
+                      FORMAT = "image/tiff",
+                      RESPONSE_CRS = crs
     )
     request <- build_url(url)
+    # download een mht bestand met tif erin
+    # geen idee hoe deze tif uit mht te halen
+    file <- tempfile(fileext = ".mht")
+    GET(url = request,
+        write_disk(file))
   }
 
   if (version == "1.0.0") {
