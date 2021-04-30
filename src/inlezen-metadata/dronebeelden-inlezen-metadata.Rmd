@@ -187,11 +187,14 @@ Zie https://inbo.github.io/n2khab/articles/v030_GRTSmh.html
 
 
 ```{r}
-if (!file.exists("n2khab_data")) {
+if (!file.exists(find_root_file("n2khab_data", criterion = is_git_root))) {
   n2khab::fileman_folders(root = "git")
-  dir.create("n2khab_data/10_raw/GRTSmaster_habitats")
+  dir.create(find_root_file("n2khab_data/10_raw/GRTSmaster_habitats",
+                            criterion = is_git_root))
   n2khab::download_zenodo(doi = "10.5281/zenodo.2682323",
-                          path = "n2khab_data/10_raw/GRTSmaster_habitats")
+                          path = find_root_file(
+                            "n2khab_data/10_raw/GRTSmaster_habitats",
+                            criterion = is_git_root))
 }
 
 grts_mh <- n2khab::read_GRTSmh()
@@ -232,17 +235,17 @@ test_ndvi_classes <- classify(test_ndvi,
                               ndvi_classification,
                               include.lowest = TRUE)
 plot(test_ndvi)
-plot(raster_classes)
+plot(test_ndvi_classes)
 
 test_chm_classes <- classify(test_chm,
                              height_classification,
                              include.lowest = TRUE)
 plot(test_chm)
 plot(test_chm_classes)
+```
 
 
-
-debugonce(calc_bufferstats)
+```{r message=FALSE, warning=FALSE}
 ndvi_ac <- calc_bufferstats(raster = test_ndvi, 
                   cuts = ndvi_classification,
                   grts_raster = grts_mh,
@@ -252,6 +255,42 @@ chm_ac <- calc_bufferstats(raster = test_chm,
                   cuts = height_classification,
                   grts_raster = grts_mh,
                   bufferdist = bufferdistance)
+```
+
+```{r}
+glimpse(ndvi_ac)
+glimpse(chm_ac)
+```
+
+
+```{r}
+ndvi_mean <- calc_bufferstats(raster = test_ndvi, 
+                  grts_raster = grts_mh,
+                  bufferdist = bufferdistance,
+                  fun = "mean") %>%
+  unnest(cols = c(data, result)) %>%
+  select(GRTSmaster_habitats, ndvi = result, geometry)
+
+chm_mean <- calc_bufferstats(raster = test_chm, 
+                  grts_raster = grts_mh,
+                  bufferdist = bufferdistance,
+                  fun = "mean") %>%
+  unnest(cols = c(data, result)) %>%
+  select(GRTSmaster_habitats, height = result, geometry)
+
+ndvi_chm_mean <- ndvi_mean %>% 
+  inner_join(chm_mean)
+
+ndvi_chm_mean %>%
+  ggplot() + 
+  geom_point(aes(x = ndvi, y = height))
+
+ndvi_chm_mean %>%
+  st_as_sf() %>%
+  filter(!is.na(height)) %>%
+  ggplot() + 
+  geom_sf(aes(colour = height))
+
 
 ```
 

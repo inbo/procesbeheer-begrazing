@@ -212,18 +212,23 @@ calc_contour <- function(raster) {
 #' Calculate (extract) coverage fractions of raster values inside a polygon
 #'
 #' Helper functions used in calc_bufferstats
-calc_areas <- function(df, raster) {
-  list_df <- exactextractr::exact_extract(x = raster, y = df)
-  area_for_one <- function(x) {
-    # calculate area of one rastercell
-    cellarea <- res(raster)[1] * res(raster)[2]
-    x %>%
-      group_by(value) %>%
-      summarise(area_m2 = sum(coverage_fraction * cellarea),
-                .groups = "drop_last")
+calc_areas <- function(df, raster, fun = NULL) {
+  list_df <- exactextractr::exact_extract(x = raster, y = df, fun = fun)
+
+  if (is.null(fun)) {
+    area_for_one <- function(x) {
+      # calculate area of one rastercell
+      cellarea <- res(raster)[1] * res(raster)[2]
+      x %>%
+        group_by(value) %>%
+        summarise(area_m2 = sum(coverage_fraction * cellarea),
+                  .groups = "drop_last")
+    }
+    out <- map(list_df, area_for_one)
+    return(out)
+  } else {
+    return(list_df)
   }
-  out <- map(list_df, area_for_one)
-  return(out)
 }
 
 #' Calculate area covered by raster class values in buffer zones surrounding
@@ -234,7 +239,8 @@ calc_bufferstats <- function(
   raster,
   cuts,
   grts_raster,
-  bufferdist) {
+  bufferdist,
+  fun = NULL) {
 
   # buffer points
   grts_buffer <- grts_raster %>%
@@ -246,10 +252,12 @@ calc_bufferstats <- function(
     sf::st_buffer(dist = bufferdist)
 
   # reclassify raster
-  raster_classes <- classify(raster, cuts, include.lowest = TRUE)
+  if (!missing(cuts)) {
+    raster <- classify(raster, cuts, include.lowest = TRUE)
+  }
 
   # convert to RasterLayer
-  raster_classes <- raster::raster(raster_classes)
+  raster <- raster::raster(raster)
 
   # extract values and coverage_fraction of raster
   # per chunk of chunksize locations to avoid out of memory in case of large buffers
@@ -258,17 +266,28 @@ calc_bufferstats <- function(
     nest(data = everything()) %>%
     mutate(areas = map(.x = data,
                        .f = calc_areas,
-                       raster = raster_classes))
+                       raster = raster,
+                       fun = fun))
 
-  result <- result %>%
-    unnest(c(data, areas)) %>%
-    unnest(areas) %>%
-    select(-geometry) %>%
-    ungroup() %>%
-    rename(class = value) %>%
-    mutate(proportion = area_m2 / (pi * bufferdist^2),
-           bufferdist = bufferdist)
-  return(result)
+  if (!missing(cuts)) {
+    classes_df <- data.frame(lower = cuts, upper = lead(cuts)) %>%
+      filter(!is.na(upper)) %>%
+      mutate(class = 1:n(),
+             label = paste0("[",lower,",", upper,"]")) %>%
+      select(-lower, -upper)
+
+    result <- result %>%
+      unnest(c(data, areas)) %>%
+      unnest(areas) %>%
+      select(-geometry) %>%
+      ungroup() %>%
+      rename(class = value) %>%
+      left_join(classes_df, by = "class") %>%
+      mutate(proportion = area_m2 / (pi * bufferdist^2),
+             bufferdist = bufferdist)
+    return(result)
+  } else {
+    return(result %>%
+             rename(result = areas))
+  }
 }
-
-
