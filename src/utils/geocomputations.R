@@ -197,16 +197,6 @@ calc_ndvi <- function(dsm, overwrite = FALSE) {
 
 }
 
-#' Calculate the contour of the area covered by a drone flight mission.
-#'
-#' WIP
-calc_contour <- function(raster) {
-  raster2 <- classify(raster, c(-Inf, +Inf))
-  raster2 <- raster::raster(raster2)
-  raster2 <- raster::rasterToPolygons(raster2)
-  raster2 <- sf::st_as_sf(raster2)
-  return(raster2)
-}
 
 
 #' Calculate (extract) coverage fractions of raster values inside a polygon
