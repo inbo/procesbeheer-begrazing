@@ -122,8 +122,6 @@ plot(dtm1m)
 
 Canopy height model = digitaal oppervlaktemodel - digitaal hoogtemodel
 
-*R*
-
 
 ```{r}
 test_chm <- calc_chm(dsm = X20200831_0179202_Ename1_DEM) #enkele minuten
@@ -249,12 +247,14 @@ plot(test_chm_classes)
 ndvi_ac <- calc_bufferstats(raster = test_ndvi, 
                   cuts = ndvi_classification,
                   grts_raster = grts_mh,
-                  bufferdist = bufferdistance)
+                  bufferdist = bufferdistance,
+                  mask = droneblokken)
 
 chm_ac <- calc_bufferstats(raster = test_chm, 
                   cuts = height_classification,
                   grts_raster = grts_mh,
-                  bufferdist = bufferdistance)
+                  bufferdist = bufferdistance,
+                  mask = droneblokken)
 ```
 
 ```{r}
@@ -267,20 +267,27 @@ glimpse(chm_ac)
 ndvi_mean <- calc_bufferstats(raster = test_ndvi, 
                   grts_raster = grts_mh,
                   bufferdist = bufferdistance,
-                  fun = "mean") %>%
+                  fun = "mean",
+                  mask = droneblokken) %>%
   unnest(cols = c(data, result)) %>%
   select(GRTSmaster_habitats, ndvi = result, geometry)
 
 chm_mean <- calc_bufferstats(raster = test_chm, 
                   grts_raster = grts_mh,
                   bufferdist = bufferdistance,
-                  fun = "mean") %>%
+                  fun = "mean",
+                  mask = droneblokken) %>%
   unnest(cols = c(data, result)) %>%
   select(GRTSmaster_habitats, height = result, geometry)
 
 ndvi_chm_mean <- ndvi_mean %>% 
   inner_join(chm_mean)
 
+
+```
+
+
+```{r}
 ndvi_chm_mean %>%
   ggplot() + 
   geom_point(aes(x = ndvi, y = height))
@@ -289,9 +296,7 @@ ndvi_chm_mean %>%
   st_as_sf() %>%
   filter(!is.na(height)) %>%
   ggplot() + 
-  geom_sf(aes(colour = height))
-
-
+  geom_sf(aes(colour = height > 2 & ndvi < 0.2))
 ```
 
 

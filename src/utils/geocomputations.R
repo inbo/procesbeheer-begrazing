@@ -224,13 +224,42 @@ calc_areas <- function(df, raster, fun = NULL) {
 #' Calculate area covered by raster class values in buffer zones surrounding
 #' GRTS points
 #'
+#' First case. A vector of cuts is given (and fun = NULL), in which case the
+#' raster layer is classified into ordinal classes using the breakpoints
+#' provided in cuts. The result will be a dataframe containing for each GRTS
+#' bufferzone the area (m2) and proportion of classes present within that zone.
+#' Second case. A function (e.g. mean, see ?exactextractr::exact_extract()) is
+#' given and the corresponding summary value is calculated for each bufferzone.
 #'
+#' @param raster A spatRaster.
+#' @param cuts A vector of breakpoints to classify the values in the raster.
+#' Should include lower- and uppermost theoretical values.
+#' @param grts_raster A spatRaster representing the GRTSmaster_habitats raster.
+#' @param bufferdist A distance in meter to be used as bufferradius around each
+#' GRTS point.
+#' @param mask A polygon layer to be used as mask for the selection of GRTS
+#' points for which calculations are needed. Points that are not inside a
+#' polygon will be masked.
 calc_bufferstats <- function(
   raster,
   cuts,
   grts_raster,
   bufferdist,
+  mask = NULL,
   fun = NULL) {
+
+  # prepare mask
+  if (!is.null(mask)) {
+    assertthat::assert_that(inherits(mask, "sf"))
+    mask <- mask %>%
+      st_buffer(dist = 2 * bufferdist) %>%
+      vect()
+    # mask rasters
+    raster <- terra::mask(raster, mask = mask)
+    grts_raster <- grts_raster %>%
+      terra::crop(raster) %>%
+      terra::mask(mask = mask)
+  }
 
   # buffer points
   grts_buffer <- grts_raster %>%
