@@ -285,8 +285,6 @@ chm_mean <- calc_bufferstats(raster = test_chm,
 
 ndvi_chm_mean <- ndvi_mean %>% 
   inner_join(chm_mean)
-
-
 ```
 
 
@@ -299,7 +297,7 @@ ndvi_chm_mean %>%
   st_as_sf() %>%
   filter(!is.na(height)) %>%
   ggplot() + 
-  geom_sf(aes(colour = height > 2 & ndvi < 0.2))
+  geom_sf(aes(fill = height > 2 & ndvi < 0.2))
 ```
 
 
