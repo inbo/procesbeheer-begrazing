@@ -1,5 +1,7 @@
 ---
 title: "Verkenning inlezen en rekenen met dronebeelden"
+author: "Hans Van Calster"
+date: "`r Sys.Date()`"
 output: html_document
 ---
 
@@ -15,6 +17,7 @@ library(httr)
 library(xml2)
 library(dplyr)
 library(sf)
+library(geodiv)
 source(find_root_file("src/utils/utils.R", criterion = is_git_root))
 source(find_root_file("src/utils/geocomputations.R", criterion = is_git_root))
 ```
@@ -42,7 +45,9 @@ Voordelen:
 ```{r inlezen, warning=FALSE}
 map_procesbeheer <- get_map_procesbeheer()
 fs::dir_exists(map_procesbeheer)
-all_tif_files <- fs::dir_ls(file.path(map_procesbeheer, "Drone_geg"), 
+all_tif_files <- fs::dir_ls(file.path(map_procesbeheer, 
+                                      "PB06_Drone_En_Beelden",
+                                      "PB_Drone_Data"), 
                             recurse = TRUE, 
                             glob = "*.tif")
 walk(all_tif_files, load_tif)
@@ -65,7 +70,9 @@ plot(X20200831_0179202_Ename1_DEM)
 ```{r droneblokken}
 droneblokken <- read_sf(
   file.path(
-    map_procesbeheer, "droneblokken", "20210429_DroneblokProcesbeheer.shp"
+    map_procesbeheer,
+    "PB06_Drone_En_Beelden/PB_Drone_Organisatie/PB_Drone_Blokken/Shape",
+    "20210429_DroneblokProcesbeheer.shp"
     ), crs = 31370
   )
 ```
@@ -139,8 +146,6 @@ rasterVis::gplot(test_chm) +
           aes(colour = naam), 
           fill = NA,
           inherit.aes = FALSE)
-
-
 ```
 
 
@@ -177,7 +182,7 @@ plot(test_ndvi)
 test_ndvi
 ```
 
-
+<!--to do: functie schrijven om gradiëntgebaseerde landschapsmetrieken te berekenen via geodiv package-->
 
 ## GRTS master sample
 
@@ -213,8 +218,6 @@ grts_detail_points <- as.points(grts_detail)
 # check dat as.points() de centroïden geeft
 plot(grts_detail)
 points(grts_detail_points)
-
-
 ```
 
 ## Indelen in klassen en oppervlakte-aandelen bepalen 
