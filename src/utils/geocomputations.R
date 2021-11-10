@@ -265,7 +265,7 @@ calc_bufferstats <- function(
   grts_buffer <- grts_raster %>%
     crop(raster) %>%
     as.points() %>%
-    as.data.frame(geom = TRUE) %>%
+    as.data.frame(geom = "WKT") %>%
     sf::st_as_sf(wkt = "geometry",
                  crs = "epsg:31370") %>%
     sf::st_buffer(dist = bufferdist)
