@@ -20,11 +20,11 @@ get_map_inbogis <- function() {
 }
 
 
-load_tif <- function(path) {
-  tifname <- basename(path)
-  tifname <- fs::path_ext_remove(tifname)
-  tifname <- make.names(tifname)
-  assign(tifname, terra::rast(path), inherits = TRUE)
+load_rasterfiles <- function(path) {
+  filename <- basename(path)
+  filename <- fs::path_ext_remove(filename)
+  filename <- make.names(filename)
+  assign(filename, terra::rast(path), inherits = TRUE)
 }
 
 

@@ -98,7 +98,10 @@ calc_chm <- function(dsm, overwrite = FALSE) {
 
 
   # prelim check
-  destination <- file.path(get_map_procesbeheer(), "chm")
+  destination <- file.path(get_map_procesbeheer(),
+                           "PB06_Drone_En_Beelden",
+                           "PB_afgeleide_data",
+                           "chm")
 
   if (!dir.exists(destination)) {
     dir.create(destination, recursive = TRUE)
@@ -124,10 +127,10 @@ calc_chm <- function(dsm, overwrite = FALSE) {
     layername = "EL.GridCoverage.DTM",
     resolution = 1)
 
-  # disaggregate dtm to 0.025 x 0.025 resolution
-  dtm_crop <- disaggregate(dtm_crop, fact = 1/0.025)
-
+  # result must have accuracy of least accurate map
+  # (=map with lowest resolution)
   # resample dsm so it has same raster as dtm_crop
+  # this will automatically aggregate to same resolution
   dsm <- terra::resample(dsm, dtm_crop)
 
   # wkt string overschrijven (zelfde crs, maar verschillende representatie)
@@ -160,7 +163,10 @@ calc_ndvi <- function(dsm, overwrite = FALSE) {
 
   # prelim check
 
-  destination <- file.path(get_map_procesbeheer(), "ndvi")
+  destination <- file.path(get_map_procesbeheer(),
+                           "PB06_Drone_En_Beelden",
+                           "PB_afgeleide_data",
+                           "ndvi")
 
   if (!dir.exists(destination)) {
     dir.create(destination, recursive = TRUE)
@@ -203,7 +209,8 @@ calc_ndvi <- function(dsm, overwrite = FALSE) {
 #'
 #' Helper functions used in calc_bufferstats
 calc_areas <- function(df, raster, fun = NULL) {
-  list_df <- exactextractr::exact_extract(x = raster, y = df, fun = fun)
+  list_df <- exactextractr::exact_extract(x = raster, y = df, fun = fun,
+                                          progress = interactive())
 
   if (is.null(fun)) {
     area_for_one <- function(x) {
@@ -274,9 +281,6 @@ calc_bufferstats <- function(
   if (!missing(cuts)) {
     raster <- classify(raster, cuts, include.lowest = TRUE)
   }
-
-  # convert to RasterLayer
-  raster <- raster::raster(raster)
 
   # extract values and coverage_fraction of raster
   # per chunk of chunksize locations to avoid out of memory in case of large buffers
