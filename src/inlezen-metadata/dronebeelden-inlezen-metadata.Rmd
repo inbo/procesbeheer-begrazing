@@ -6,6 +6,7 @@ output: bookdown::html_document2
 ---
 
 ```{r setup, include=FALSE}
+install.packages("geodiv")
 library(knitr)
 opts_chunk$set(echo = TRUE)
 
