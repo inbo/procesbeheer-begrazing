@@ -1,0 +1,413 @@
+---
+title: "Verkenning inlezen en rekenen met dronebeelden"
+author: "Hans Van Calster"
+date: "`r Sys.Date()`"
+output: bookdown::html_document2
+---
+
+```{r setup, include=FALSE}
+install.packages("geodiv")
+library(knitr)
+opts_chunk$set(echo = TRUE)
+
+library(terra)
+library(rprojroot)
+library(tidyverse)
+library(fs)
+library(httr)
+library(xml2)
+library(dplyr)
+library(sf)
+library(geodiv)
+library(mapview)
+options(rgl.useNULL = TRUE)
+library(rgl)
+
+source(find_root_file("src/utils/utils.R", criterion = is_git_root))
+source(find_root_file("src/utils/geocomputations.R", criterion = is_git_root))
+```
+
+
+
+# Test met Ename
+
+Vraagstellingen:
+
+1. Relatie tussen biodiversiteitsvariabelen en toenemend aandeel van opgaande vegetatie (ruigte, struweel en bos). We bestuderen deze structuurgradiënt in de voedselrijke systemen, in de duinen en langs de Grensmaas.
+2. Relatie tussen biodiversiteitsvariabelen en toenemend aandeel aan verruigende grassen. Deze gradiënt bekijken we in schorren (strandkweek) en in de heide (pijpenstrootje).
+3. De impact van begrazingsintensiteit op schrale zandige biotopen (kustduinen en heide). 
+4. Verschil tussen maaien en begrazing wordt bekeken in duinen, heide en voedselrijke systemen.
+
+Vragen 1 en 4 zijn relevant voor Ename.
+
+```{r}
+steekproefgrootte <- data.frame(
+         stringsAsFactors = FALSE,
+  Structuurvariatieklasse = c("(Open) pioniervegetatie","Lage gesloten vegetatie",
+                              "Idem + ruigte / dwergstruweel","Idem + struweel / boomopslag"),
+                Begrazing = c(9L, 9L, 9L, 9L),
+                   Maaien = c(NA, 9L, NA, NA)
+)
+
+steekproefgrootte %>%
+  kable()
+```
+
+Zijn de vermelde steekproefgroottes in de tabel per gebied of per systeem?
+Voor voedselrijke systemen zijn er twee gebieden geselecteerd: Ename en Demerbroeken.
+
+
+## Digitaal oppervlakte model (dronebeelden) (Digital Surface Model DSM)
+
+
+### Rasterbeelden
+
+Dronebeelden rechtstreeks vanaf gedeelde google drive via lokale sync in G:\
+
+
+Voordelen:
+
+- script blijft werken omdat iedereen naar dezelfde locatie verwijst (op voorwaarde dat G gekozen werd als schijf voor google drive lokaal te syncen)
+- download vanaf google drive gebeurd automatisch, geen authentificatie nodig (google drive for desktop zal enkel die bestanden lokaal beschikbaar maken die effectief gebruikt worden)
+
+
+```{r inlezen, warning=FALSE}
+map_procesbeheer <- get_map_procesbeheer()
+fs::dir_exists(map_procesbeheer)
+all_tif_files <- fs::dir_ls(file.path(map_procesbeheer, 
+                                      "PB06_Drone_En_Beelden",
+                                      "PB_Drone_Data"), 
+                            recurse = TRUE, 
+                            glob = "*.tif")
+all_ndvi_tif_files <- fs::dir_ls(file.path(map_procesbeheer, 
+                                      "PB06_Drone_En_Beelden",
+                                      "PB_NDVI"), 
+                            recurse = TRUE, 
+                            glob = "*.tif")
+
+all_jpg_files <- fs::dir_ls(file.path(map_procesbeheer, 
+                                      "PB06_Drone_En_Beelden",
+                                      "PB_Drone_Data"), 
+                            recurse = TRUE, 
+                            glob = "*.jpg")
+
+walk(all_tif_files, load_rasterfiles)
+walk(all_ndvi_tif_files, load_rasterfiles)
+walk(all_jpg_files, load_rasterfiles)
+```
+
+```{r check-metadata}
+X20200831_0179202_Ename1_DEM
+
+cat(crs(X20200831_0179202_Ename1_DEM))
+```
+
+
+```{r voorbeeld-plot}
+plot(X20200831_0179202_Ename1_DEM)
+```
+
+In de map PB_Drone_Data zitten zowel bestanden met DEM in de naam als ortho in de naam.
+De DEM bestanden zijn de digitale elevatie modellen afgeleid van de dronevluchten.
+De ortho bestanden zijn de dronebeelden waarmee de DEM bestanden gemaakt zijn via het structure from motion algoritme.
+
+```{r orthofoto}
+X20200831_0179202_Ename1_Ortho
+cat(crs(X20200831_0179202_Ename1_Ortho))
+```
+
+```{r plot-voorbeeld-orthofoto}
+plot(X20200831_0179202_Ename1_Ortho)
+```
+
+In de map PB_NDVI zitten NDVI beelden voor elk van de gebieden.
+Kan blijkbaar niet afgeleid worden van de dronebeelden omdat er geen NIR band is.
+
+```{r ndvi-ename}
+NDVI_18_Ename
+cat(crs(NDVI_18_Ename))
+```
+
+```{r plot-ndvi-voorbeeld}
+plot(NDVI_18_Ename)
+```
+
+
+### Dronevlucht polygonen
+
+```{r droneblokken}
+droneblokken <- read_sf(
+  file.path(
+    map_procesbeheer,
+    "PB06_Drone_En_Beelden/PB_Drone_Organisatie/PB_Drone_Blokken/Shape",
+    "20210429_DroneblokProcesbeheer.shp"
+    ), crs = 31370
+  )
+```
+
+```{r plot-droneblokken}
+plot_gebied <- function(data, gebied) {
+  data %>%
+    ggplot() +
+    geom_sf() +
+    labs(title = gebied)
+}
+
+plot_df <- droneblokken %>%
+  group_by(Gebied) %>%
+  nest() %>%
+  mutate(plot = map2(data, Gebied, plot_gebied))
+
+plot_df$plot
+```
+
+
+
+## Digitaal terrein model (DTM)
+
+Digitaal Hoogtemodel Vlaanderen II:
+
+Zie WCS service:
+
+https://inspire.informatievlaanderen.be/overdrachtdiensten/el-dtm/wcs?request=GetCapabilities
+
+
+```{r wcs-dhm}
+# voorbeeldje
+bbox_vec <- X20200831_0179202_Ename1_DEM %>%
+  ext() %>%
+  floor() %>%
+  as.vector()
+
+dtm1m <- get_wcs_layer(
+  wcs = "dtm", 
+  bbox = bbox_vec,
+  layername = "EL.GridCoverage.DTM", 
+  resolution = 1)
+
+#all.equal(crs(dtm1m), crs(X20200831_0179202_Ename1_DEM))
+
+plot(dtm1m)
+
+```
+
+
+
+## Canopy height model (CHM)
+
+Canopy height model = digitaal oppervlaktemodel - digitaal hoogtemodel
+
+
+```{r calc-chm}
+test_chm <- calc_chm(dsm = X20200831_0179202_Ename1_DEM, overwrite = FALSE)
+
+test_chm
+
+plot(test_chm)
+
+# opgepast! naam van blok (EN2) correspondeert niet met naam van tif bestand Ename1
+rasterVis::gplot(raster::raster(test_chm)) +
+  geom_tile(aes(fill = value)) +
+  scale_fill_gradient(low = 'white', high = 'blue') +
+  geom_sf(data = droneblokken %>%
+            filter(Gebied == "Ename"),
+          aes(colour = naam), 
+          fill = NA,
+          inherit.aes = FALSE)
+```
+
+
+```{r plot3d}
+p3d_chm <- rasterVis::plot3D(raster::raster(test_chm))
+rglwidget()
+```
+
+
+## NDVI 
+
+Bron: false colour-NIR orthofoto van Informatie Vlaanderen (2018)
+
+https://geoservices.informatievlaanderen.be/raadpleegdiensten/OMZ/wms
+
+https://www.geopunt.be/catalogus/datasetfolder/5c3e8dd5-587a-4bab-b88a-ab3c9a2b6709
+
+https://inspire.informatievlaanderen.be/overdrachtdiensten/oi-omz/wcs
+
+Enkel CIR nodig om NDVI te berekenen. 
+Zie https://eo.belspo.be/nl/kleurencomposieten:
+
+> Een bijzonder doeltreffende kleurencomposiet in teledetectie is "valse-kleuren infrarood" beeld. Hierin worden de banden van nabij infrarood, rood en groen van de sensor geassocieerd met de kleuren rood, groen en blauw van het scherm. 
+
+NDVI = (NIR - RED) / (NIR + RED)
+
+De mapping is dus:
+
+- NIR = nabij-infrarood = band1 = "rood op het scherm"
+- RED = rood = band2 = "groen op het scherm"
+
+```{r calc-ndvi}
+test_ndvi <- calc_ndvi(dsm = X20200831_0179202_Ename1_DEM)
+plot(test_ndvi)
+test_ndvi
+```
+
+
+<!--to do: functie schrijven om gradiëntgebaseerde landschapsmetrieken te berekenen via geodiv package-->
+
+## GRTS master sample
+
+Zie https://inbo.github.io/n2khab/articles/v030_GRTSmh.html
+
+
+```{r inlezen-grts}
+if (!file.exists(find_root_file("n2khab_data", criterion = is_git_root))) {
+  n2khab::fileman_folders(root = "git")
+  dir.create(find_root_file("n2khab_data/10_raw/GRTSmaster_habitats",
+                            criterion = is_git_root))
+  n2khab::download_zenodo(doi = "10.5281/zenodo.2682323",
+                          path = find_root_file(
+                            "n2khab_data/10_raw/GRTSmaster_habitats",
+                            criterion = is_git_root))
+}
+
+grts_mh <- n2khab::read_GRTSmh()
+grts_mh <- terra::rast(grts_mh) 
+# terra:rast reads crs from the tif file, not from the grts_mh object
+# need to manually replace by correct crs representation
+terra::crs(grts_mh) <- "EPSG:31370"
+```
+
+```{r plot-grts}
+plot(grts_mh)
+
+#detail
+grts_detail <- grts_mh %>%
+  crop(ext(c(100000,100200,175000,175200)))
+grts_detail_points <- as.points(grts_detail)
+
+# check dat as.points() de centroïden geeft
+plot(grts_detail)
+points(grts_detail_points)
+```
+
+## Indelen in klassen en oppervlakte-aandelen bepalen 
+
+Mbv exactextractr oppervlakte-aandelen bepalen in buffers rond grts punten.
+
+
+
+```{r calc-class-chm}
+height_classification <- c(-Inf, 0, 0.07, 0.15, 0.25, 0.45, 0.70, 1, 1.5, 2,
+                           2.75, 4, 8, +Inf)
+
+test_chm_classes <- classify(test_chm,
+                             height_classification,
+                             include.lowest = TRUE)
+```
+
+```{r calc-class-ndvi}
+ndvi_classification <- c(-1, 0, 0.1, 0.2, 0.3, 0.4, 1)
+test_ndvi_classes <- classify(test_ndvi, 
+                              ndvi_classification,
+                              include.lowest = TRUE)
+```
+
+```{r plot-class-ndvi}
+plot(test_ndvi)
+plot(test_ndvi_classes)
+```
+
+```{r plot-class-chm}
+plot(test_chm)
+plot(test_chm_classes)
+```
+
+
+```{r calc-bufferstats-ndvi, message=FALSE, warning=FALSE}
+bufferdistance <- 6
+ndvi_ac <- calc_bufferstats(raster = test_ndvi, 
+                  cuts = ndvi_classification,
+                  grts_raster = grts_mh,
+                  bufferdist = bufferdistance,
+                  mask = droneblokken)
+```
+
+```{r calc-bufferstats-chm, message=FALSE, warning=FALSE}
+chm_ac <- calc_bufferstats(raster = test_chm, 
+                  cuts = height_classification,
+                  grts_raster = grts_mh,
+                  bufferdist = bufferdistance,
+                  mask = droneblokken)
+
+```
+
+```{r glimpse-bufferstats}
+glimpse(ndvi_ac)
+glimpse(chm_ac)
+```
+
+
+```{r calc-bufferstats-meanvalues, message=FALSE, warning=FALSE}
+ndvi_mean <- calc_bufferstats(raster = test_ndvi, 
+                  grts_raster = grts_mh,
+                  bufferdist = bufferdistance,
+                  fun = "mean",
+                  mask = droneblokken) %>%
+  unnest(cols = c(data, result)) %>%
+  select(GRTSmaster_habitats, ndvi = result, geometry)
+
+chm_mean <- calc_bufferstats(raster = test_chm, 
+                  grts_raster = grts_mh,
+                  bufferdist = bufferdistance,
+                  fun = "mean",
+                  mask = droneblokken) %>%
+  unnest(cols = c(data, result)) %>%
+  select(GRTSmaster_habitats, height = result, geometry)
+
+ndvi_chm_mean <- ndvi_mean %>% 
+  inner_join(chm_mean)
+```
+
+(ref:xlab) Gemiddelde NDVI in cirkelplots met straal `r bufferdistance` m
+
+(ref:ylab) Gemiddelde hoogte in cirkelplots met straal `r bufferdistance` m
+
+```{r scatterplot-ndvi-chm-mean}
+ndvi_chm_mean %>%
+  ggplot() + 
+  geom_point(aes(x = ndvi, y = height,
+                 colour = height > 2 & ndvi < 0.2)) +
+  labs(x = "(ref:xlab)",
+       y = "(ref:ylab)")
+```
+
+```{r map-ndvi-chm-mean}
+ndvi_chm_mean %>%
+  st_as_sf() %>%
+  filter(!is.na(height)) %>%
+  mutate(height_high_ndvi_low = height > 2 & ndvi < 0.2) %>%
+  st_transform(crs = 4326) %>%
+  mapview::mapView(zcol = c("height_high_ndvi_low", "height", "ndvi"))
+```
+
+
+# Vragen
+
+- afleiden structuurvariatieklassen: 
+    - welke gegevens gebruiken? CHM + NDVI? In figuren staat relatie tussen hoogte en densiteit. Densiteit is gerelateerd aan NDVI??
+    - welke grenswaarden gebruiken voor de verschillende systemen?
+- waar vinden we de beheerintensiteitsgegevens?
+- welke extra stappen zijn nodig om het steekproefkader op te kuisen? I.e. welke GRTS punten (cirkels 6 m diameter) op voorhand uitsluiten?
+    - wegen wegfilteren?
+    - gebouwen wegfilteren?
+    - punten die niet geheel in homogeen beheer gelegen zijn?
+    - ...
+
+
+
+
+# Resources
+
+https://datacarpentry.org/r-raster-vector-geospatial/03-raster-reproject-in-r/
+
+https://semba-blog.netlify.app/12/14/2020/manipulate-and-visualize-raster-data-with-leaflet-and-tmap-in-r/
