@@ -1,0 +1,198 @@
+---
+title: "Berekening van structuurvariatie op basis van dronebeelden en orthofoto's"
+author: "Hans Van Calster"
+date: "13-5-2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+opts_chunk$set(echo = TRUE)
+
+
+library(terra)
+library(rprojroot)
+library(tidyverse)
+library(fs)
+library(httr)
+library(xml2)
+library(dplyr)
+library(sf)
+library(geodiv)
+library(mapview)
+library(readxl)
+
+source(find_root_file("src/utils/utils.R", criterion = is_git_root))
+source(find_root_file("src/utils/geocomputations.R", criterion = is_git_root))
+source(find_root_file("src/utils/wfs_wcs.R", criterion = is_git_root))
+
+```
+
+
+# Doelstellingen
+
+
+- Metrieken ontwikkelen voor structuurvariatie (ongeveer) op plotniveau (diameter 6 m).
+- Toe te passen op de plots (respons = fauna/flora) en op gebiedsniveau (relatie met begrazing): toch twee verschillende dingen
+  - plotniveau: maat voor variatie in structuur binnen de plot
+    - obv CHM
+    - obv combinatie CHM en NDVI
+  - gebiedsniveau: een kaart die de structuur weergeeft
+- Welke resolutie ??? Intuitief tussen 5 en 25 cm
+  - bij aggregatie opties van aggregeren bekijken (gemiddelde, low pass filter, high pass filter, ...)
+- CHM produceren: dtm wordt geïnterpoleerd
+  - dtm heeft resolutie 1m en moet op zelfde resolutie als CHM worden gebracht
+- Foutenanalyse op dtm op basis van rtk metingen van subplots !! (27 dtm pixels t.o.v. 5 manuele metingen)
+  - RTK metingen zitten in bestand PB_plot_coördinaten.xlsx
+  - De vraag is hier of de RTK metingen systematisch verschillen van de DTM en indien ja of we de DTM metingen kunnen corrigeren hiermee
+- Als studiegebied in eerste instantie Ename !
+  - dronevluchtblokken binnen de studiegebieden zijn praktisch gekozen eenheden die de bedoeling hebben om een representatief beeld te hebben van de verschillen in structuurvariatie in het gebied
+  - De naamgeving van de drone-beelden van Ename is definitief aangepast: zie "/Procesbeheer/PB06_Drone_En_Beelden/PB_Drone_Data/Voedselrijk_Ename/Ename20200831"
+  - vh25 slaat op "vegetatiehoogte op een resolutie van 25 cm" (chm - dtm vlaanderen) en is dus een gemerged beeld van het hele gebied.
+
+```{r inlezen-ename-rasters, warning=FALSE}
+map_procesbeheer <- get_map_procesbeheer()
+all_tif_files <- fs::dir_ls(file.path(map_procesbeheer, 
+                                      "PB06_Drone_En_Beelden",
+                                      "PB_Drone_Data",
+                                      "Voedselrijk_Ename",
+                                      "Ename20200831"), 
+                            recurse = TRUE, 
+                            glob = "*.tif")
+all_ndvi_tif_files <- fs::dir_ls(file.path(map_procesbeheer, 
+                                      "PB06_Drone_En_Beelden",
+                                      "PB_NDVI"), 
+                            recurse = TRUE, 
+                            glob = "*.tif")
+
+all_jpg_files <- fs::dir_ls(file.path(map_procesbeheer, 
+                                      "PB06_Drone_En_Beelden",
+                                      "PB_Drone_Data",
+                                      "Voedselrijk_Ename",
+                                      "Ename20200831"), 
+                            recurse = TRUE, 
+                            glob = "*.jpg")
+
+walk(all_tif_files, load_rasterfiles)
+walk(all_ndvi_tif_files[grepl("Ename", all_ndvi_tif_files)],
+     load_rasterfiles)
+walk(all_jpg_files, load_rasterfiles)
+```
+
+
+```{r inlezen-ename-rtk}
+rtk_ename <- read_excel(
+  file.path(map_procesbeheer,
+            "PB11_Plotbemonstering",
+            "PB_Plot_Topo",
+            "2022",
+            "PB_Plot_Coordinaten.xlsx")) %>%
+  filter(!is.na(X), !is.na(Y), !is.na(TAW),
+         str_detect(Code, "en")) %>%
+  janitor::clean_names() %>%
+  separate(col = code,
+           into = c("gebied", "plot", "positie"),
+           sep = c(2,4),
+           remove = FALSE)
+
+rtk_ename_sf <- rtk_ename %>%
+  st_as_sf(coords = c("x", "y"), crs = 31370)
+```
+
+
+```{r droneblokken-ename}
+droneblokken <- read_sf(
+  file.path(
+    map_procesbeheer,
+    "PB06_Drone_En_Beelden/PB_Drone_Organisatie/PB_Drone_Blokken/Shape",
+    "20210429_DroneblokProcesbeheer.shp"
+    ), crs = 31370
+  ) %>%
+  janitor::clean_names() %>%
+  filter(gebied == "Ename")
+```
+
+
+
+# Berekening canopy height model (CHM)
+
+## Digitaal terreinmodel (DTM) versus RTK hoogtemetingen
+
+```{r rtk-plots-ename}
+rtk_ename %>%
+  ggplot() +
+  geom_point(aes(x = x, y = y, size = taw)) +
+  facet_wrap(~plot, scales = "free", labeller = label_both)
+```
+
+```{r wcs-dhm-ename}
+# voorbeeldje
+bbox_vec <- Ename_20200831_DEM_Blok1 %>%
+  ext() %>%
+  floor() %>%
+  as.vector()
+
+dtm1m <- get_coverage_wcs(
+  wcs = "dtm", 
+  bbox = bbox_vec,
+  layername = "EL.GridCoverage.DTM", 
+  resolution = 1)
+
+#all.equal(crs(dtm1m), crs(X20200831_0179202_Ename1_DEM))
+
+plot(dtm1m)
+plot(Ename_20200831_DEM_Blok1)
+
+```
+
+```{r eval=FALSE}
+raster::raster(dtm1m) %>%
+  mapview(alpha = 0.3,
+          maxpixels = 1e6)
+
+raster::raster(Ename_20200831_DEM_Blok1) %>%
+  mapview(alpha = 0.3,
+          maxpixels = 1e6)
+
+
+```
+
+```{r plot-droneblokken-ename}
+library(stars)
+droneblokken %>%
+  ggplot() +
+  geom_sf(aes(fill = blok_code)) +
+  geom_sf(data = rtk_ename_sf, aes(shape = plot), size = 4)
+```
+
+```{r vh25-rtk}
+ggplot() +
+  geom_stars(data = st_as_stars(Ename_20200831_vh25),
+             downsample = 11) +
+  coord_equal() +
+  geom_point(data = rtk_ename, aes(x = x, y = y, shape = plot),
+             size = 4)
+```
+
+
+## Keuze resolutie en (dis)aggregatiemethoden
+
+
+## Berekening CHM en overlappende blokken
+
+
+# Structuurvariatie binnen plots van 6 m diameter
+
+## CHM
+
+## CHM + NDVI
+
+# Gebiedsdekkende structuurkaart
+
+## CHM
+
+## CHM + NDVI
+
+## Classificatie
+
+
