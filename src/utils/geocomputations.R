@@ -1,91 +1,111 @@
-#' Get a layer from a web coverage service within a bounding box
+#' Convert a single point location to a grid cell polygon
 #'
-get_wcs_layer <- function(wcs = c("dtm", "omz"),
-                          bbox, #xmin, xmax, ymin, ymax
-                          layername,
-                          resolution,
-                          crs = "EPSG:31370",
-                          version = c("1.0.0", "2.0.1")) {
-  # prelim check
-  version <- match.arg(version)
-  wcs <- match.arg(wcs)
+#' @param xy an object of class POINT
+#' @param cell_width_m cell width in meter, default 500
+#' @param point_position default center of grid cell
+#' @param crs default EPSG code 31370
+#'
+#' @return
+#' @export
+#'
+#' @examples
+point_to_gridcell <- function(
+    xy,
+    cell_width_m = 500,
+    point_position = c("center", "lowerleft", "upperleft", "lowerright", "upperright"),
+    crs = 31370) {
+  point_position <- match.arg(point_position)
 
-  # set url
-  wcs <- ifelse(
-    wcs == "omz",
-    "https://inspire.informatievlaanderen.be/overdrachtdiensten/oi-omz/wcs",
-    "https://inspire.informatievlaanderen.be/overdrachtdiensten/el-dtm/wcs"
-  )
+  if (point_position != "center") stop(point_position, " not yet implemented")
 
-  assertthat::assert_that(is.character(layername))
-  assertthat::assert_that(is.character(crs))
-  assertthat::assert_that(
-    is.vector(bbox, mode = "numeric"),
-    length(bbox) == 4)
+  stopifnot(sf::st_is(xy, "POINT"))
+  xy_df <- sf::st_drop_geometry(xy)
+  xy <- sf::st_geometry(xy)
 
-  names(bbox) <- c("xmin", "xmax", "ymin", "ymax")
+  # buffer with 1 point per quandrant
+  xy_buffer <- sf::st_buffer(x = xy,
+                             dist = cell_width_m / 2,
+                             nQuadSegs = 1)
 
-  assertthat::assert_that(is.numeric(resolution))
+  # rotate 45 degrees around centroid
+  rot <- function(a) matrix(c(cos(a), sin(a), -sin(a), cos(a)), 2, 2)
+  pl <- (xy_buffer - xy) * rot(pi/4) + xy
+  pl <- sf::st_sf(data.frame(xy_df, pl), crs = crs)
+  return(pl)
+}
 
-  # build url request
-  url <- parse_url(wcs)
 
-  if (version == "2.0.1") {
-    stop(paste0("code for version = ", version, "is not yet working"))
-    url$query <- list(SERVICE = "WCS",
-                      VERSION = version,
-                      REQUEST = "GetCoverage",
-                      COVERAGEID = layername,
-                      CRS = crs,
-                      SUBSET = paste0("x,http://www.opengis.net/def/crs/EPSG/0/31370(",
-                                      bbox["xmin"],
-                                      ",",
-                                      bbox["xmax"],")"),
-                      SUBSET = paste0("y,http://www.opengis.net/def/crs/EPSG/0/31370(",
-                                      bbox["ymin"],
-                                      ",",
-                                      bbox["ymax"],")"),
-                      #SCALEFACTOR = 50,
-                      FORMAT = "image/tiff",
-                      RESPONSE_CRS = crs
-    )
-    request <- build_url(url)
-    # download een mht bestand met tif erin
-    # geen idee hoe deze tif uit mht te halen
-    file <- tempfile(fileext = ".mht")
-    GET(url = request,
-        write_disk(file))
+#' Calculation of land-use metrics within a grid cell
+#'
+#' @param grid_cell A polygon within which boundaries zonal statistics will be
+#' calculated
+#' @param layer A rasterlayer containing land use classes or a polygon layer (sf object)
+#' @param grid_group_by_col A character vector of columns to group by for zones
+#' @param layer_group_by_col A character vector of columns to group by for
+#' layer
+#'
+#' @return
+#' @export
+#'
+#' @examples
+landusemetrics_grid_cell <- function(
+    grid_cell,
+    layer,
+    grid_group_by_col = "POINT_ID",
+    layer_group_by_col = "",
+    progress = FALSE
+) {
+  if (inherits(layer, "SpatRaster") | inherits(layer, "RasterLayer")) {
+    assertthat::assert_that(sf::st_crs(grid_cell)$wkt == terra::crs(layer))
+
+    landcoverfraction <- function(df) {
+      df %>%
+        mutate(frac_total = coverage_fraction / sum(coverage_fraction)) %>%
+        group_by(!!!syms(grid_group_by_col), value) %>%
+        summarize(freq = sum(frac_total), .groups = "drop_last")
+    }
+
+    res <- exactextractr::exact_extract(
+      x = layer,
+      y = grid_cell,
+      fun = landcoverfraction,
+      summarize_df = TRUE,
+      include_cols = grid_group_by_col,
+      progress = progress)
+
+    return(res)
+
   }
 
-  if (version == "1.0.0") {
-    result_width <- (bbox["xmax"] - bbox["xmin"]) / resolution
-    result_height <- (bbox["ymax"] - bbox["ymin"]) / resolution
+  if (inherits(layer, "sf")) {
+    assertthat::assert_that(sf::st_crs(grid_cell)$wkt == sf::st_crs(layer)$wkt)
 
-    url$query <- list(SERVICE = "WCS",
-                      VERSION = version,
-                      REQUEST = "GetCoverage",
-                      COVERAGE = layername,
-                      CRS = crs,
-                      BBOX = paste(
-                        bbox["xmin"],
-                        bbox["ymin"],
-                        bbox["xmax"],
-                        bbox["ymax"],
-                        sep = ","),
-                      WIDTH = result_width,
-                      HEIGHT = result_height,
-                      FORMAT = "geoTIFF",
-                      RESPONSE_CRS = crs
-    )
-    request <- build_url(url)
+    int <- st_intersection(layer, grid_cell)
+
+    cell_areas <- grid_cell %>%
+      select(!!!syms(grid_group_by_col)) %>%
+      mutate(cell_area = sf::st_area(geometry)) %>%
+      sf::st_drop_geometry()
+
+    temparrow <- tempfile(fileext = ".parquet")
+
+    int$area <- sf::st_area(int$geometry)
+    int <- int %>%
+      sf::st_drop_geometry() %>%
+      inner_join(cell_areas, by = grid_group_by_col) %>%
+      arrow::write_dataset(path = temparrow)
+
+    int <- arrow::open_dataset(temparrow) %>%
+      arrow::to_duckdb() %>%
+      group_by(!!!syms(grid_group_by_col),
+               !!!syms(layer_group_by_col),
+               cell_area) %>%
+      summarise(area_m2 = sum(area)) %>%
+      mutate(area_prop = area_m2 / cell_area) %>%
+      collect()
+
+    return(int)
   }
-
-  file <- tempfile(fileext = ".tif")
-  GET(url = request,
-      write_disk(file))
-
-  raster <- terra::rast(file)
-  return(raster)
 }
 
 
@@ -121,7 +141,7 @@ calc_chm <- function(dsm, overwrite = FALSE) {
   bbox_vec <- as.vector(floor_extent_dsm)
 
   # get dtm image
-  dtm_crop <- get_wcs_layer(
+  dtm_crop <- get_coverage_wcs(
     wcs = "dtm",
     bbox = bbox_vec,
     layername = "EL.GridCoverage.DTM",
@@ -185,7 +205,7 @@ calc_ndvi <- function(dsm, overwrite = FALSE) {
   bbox_vec <- as.vector(floor_extent_dsm)
 
   # get cir raster
-  cir_raster <- get_wcs_layer(wcs = "omz",
+  cir_raster <- get_coverage_wcs(wcs = "omz",
                               bbox = bbox_vec,
                               layername = "OI.OrthoimageCoverage.OMZ.CIR",
                               resolution = 0.4)
