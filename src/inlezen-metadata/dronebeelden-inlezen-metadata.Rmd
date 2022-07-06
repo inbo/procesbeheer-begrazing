@@ -6,7 +6,7 @@ output: bookdown::html_document2
 ---
 
 ```{r setup, include=FALSE}
-install.packages("geodiv")
+#install.packages("geodiv")
 library(knitr)
 opts_chunk$set(echo = TRUE)
 
@@ -25,6 +25,7 @@ library(rgl)
 
 source(find_root_file("src/utils/utils.R", criterion = is_git_root))
 source(find_root_file("src/utils/geocomputations.R", criterion = is_git_root))
+source(find_root_file("src/utils/wfs_wcs.R", criterion = is_git_root))
 ```
 
 
@@ -97,14 +98,14 @@ walk(all_jpg_files, load_rasterfiles)
 ```
 
 ```{r check-metadata}
-X20200831_0179202_Ename1_DEM
+Ename_20200831_DEM_Blok1
 
-cat(crs(X20200831_0179202_Ename1_DEM))
+cat(crs(Ename_20200831_DEM_Blok1))
 ```
 
 
 ```{r voorbeeld-plot}
-plot(X20200831_0179202_Ename1_DEM)
+plot(Ename_20200831_DEM_Blok1)
 ```
 
 In de map PB_Drone_Data zitten zowel bestanden met DEM in de naam als ortho in de naam.
@@ -112,12 +113,12 @@ De DEM bestanden zijn de digitale elevatie modellen afgeleid van de dronevluchte
 De ortho bestanden zijn de dronebeelden waarmee de DEM bestanden gemaakt zijn via het structure from motion algoritme.
 
 ```{r orthofoto}
-X20200831_0179202_Ename1_Ortho
-cat(crs(X20200831_0179202_Ename1_Ortho))
+Ename_20200831_Ortho_Blok1
+cat(crs(Ename_20200831_Ortho_Blok1))
 ```
 
 ```{r plot-voorbeeld-orthofoto}
-plot(X20200831_0179202_Ename1_Ortho)
+plot(Ename_20200831_Ortho_Blok1)
 ```
 
 In de map PB_NDVI zitten NDVI beelden voor elk van de gebieden.
@@ -174,18 +175,18 @@ https://inspire.informatievlaanderen.be/overdrachtdiensten/el-dtm/wcs?request=Ge
 
 ```{r wcs-dhm}
 # voorbeeldje
-bbox_vec <- X20200831_0179202_Ename1_DEM %>%
+bbox_vec <- Ename_20200831_DEM_Blok1 %>%
   ext() %>%
   floor() %>%
   as.vector()
 
-dtm1m <- get_wcs_layer(
+dtm1m <- get_coverage_wcs(
   wcs = "dtm", 
   bbox = bbox_vec,
   layername = "EL.GridCoverage.DTM", 
   resolution = 1)
 
-#all.equal(crs(dtm1m), crs(X20200831_0179202_Ename1_DEM))
+#all.equal(crs(dtm1m), crs(Ename_20200831_DEM_Blok1))
 
 plot(dtm1m)
 
@@ -199,7 +200,7 @@ Canopy height model = digitaal oppervlaktemodel - digitaal hoogtemodel
 
 
 ```{r calc-chm}
-test_chm <- calc_chm(dsm = X20200831_0179202_Ename1_DEM, overwrite = FALSE)
+test_chm <- calc_chm(dsm = Ename_20200831_DEM_Blok1, overwrite = FALSE)
 
 test_chm
 
@@ -246,7 +247,7 @@ De mapping is dus:
 - RED = rood = band2 = "groen op het scherm"
 
 ```{r calc-ndvi}
-test_ndvi <- calc_ndvi(dsm = X20200831_0179202_Ename1_DEM)
+test_ndvi <- calc_ndvi(dsm = Ename_20200831_DEM_Blok1)
 plot(test_ndvi)
 test_ndvi
 ```
