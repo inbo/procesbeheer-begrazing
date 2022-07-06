@@ -43,8 +43,9 @@ vignettes/*.pdf
 dronebeelden/
 n2khab_data/
 
-# html
+# html en pdf
 *.html
+*.pdf
 
 # gitignore folder
 gitignore/
