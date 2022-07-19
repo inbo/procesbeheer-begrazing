@@ -114,9 +114,14 @@ landusemetrics_grid_cell <- function(
 #' terrain model
 #'
 #' The digital terrain model is obtained from a web coverage service
-calc_chm <- function(dsm, overwrite = FALSE) {
+calc_chm <- function(dsm,
+                     chm_resolution = 1,
+                     dtm_resolution = 1,
+                     overwrite = FALSE) {
+  is.wholenumber <-
+    function(x, tol = .Machine$double.eps^0.5)  abs(x - round(x)) < tol
 
-
+  assertthat::assert_that(is.wholenumber(dtm_resolution / chm_resolution))
   # prelim check
   destination <- file.path(get_map_procesbeheer(),
                            "PB06_Drone_En_Beelden",
@@ -127,7 +132,10 @@ calc_chm <- function(dsm, overwrite = FALSE) {
     dir.create(destination, recursive = TRUE)
   }
 
-  tifname <- paste0(gsub("DEM", "CHM", dsm@ptr$names), ".tif")
+  tifname <- paste0(gsub("DEM", "CHM", dsm@ptr$names),
+                    "_res",
+                    chm_resolution,
+                    ".tif")
 
   if (file.exists(file.path(destination, tifname)) && !overwrite) {
     chm <- terra::rast(file.path(destination, tifname))
@@ -135,23 +143,28 @@ calc_chm <- function(dsm, overwrite = FALSE) {
   }
 
   # get drone image extent
-  floor_extent_dsm <- floor(ext(dsm))
-  ext(dsm) <- floor_extent_dsm
+  ceiling_extent_dsm <- ceiling(ext(dsm))
+  ext(dsm) <- ceiling_extent_dsm
 
-  bbox_vec <- as.vector(floor_extent_dsm)
+  bbox_vec <- as.vector(ceiling_extent_dsm)
 
   # get dtm image
   dtm_crop <- get_coverage_wcs(
     wcs = "dtm",
     bbox = bbox_vec,
     layername = "EL.GridCoverage.DTM",
-    resolution = 1)
+    resolution = dtm_resolution)
 
-  # result must have accuracy of least accurate map
-  # (=map with lowest resolution)
-  # resample dsm so it has same raster as dtm_crop
-  # this will automatically aggregate to same resolution
-  dsm <- terra::resample(dsm, dtm_crop)
+  # target raster & resolution
+  # first disaggregate dtm
+  disagg_fact <- round(dtm_resolution / chm_resolution)
+  if (disagg_fact > 1) {
+    dtm_crop <- terra::disagg(dtm_crop, fact = disagg_fact, method = "bilinear")
+  }
+
+
+  # next resample dsm, this will automaticalle resample to same resolution
+  dsm <- terra::resample(dsm, dtm_crop, method = "bilinear")
 
   # wkt string overschrijven (zelfde crs, maar verschillende representatie)
   crs(dsm) <- crs(dtm_crop)
