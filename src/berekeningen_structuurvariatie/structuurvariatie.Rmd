@@ -2,7 +2,7 @@
 title: "Berekening van structuurvariatie op basis van dronebeelden en orthofoto's"
 author: "Hans Van Calster"
 date: "`r Sys.Date()`"
-output: pdf_document
+output: bookdown::pdf_document2
 bibliography: references.json
 editor_options: 
   markdown: 
@@ -11,7 +11,7 @@ editor_options:
 
 ```{r setup, include=FALSE}
 library(knitr)
-opts_chunk$set(echo = TRUE)
+opts_chunk$set(echo = FALSE)
 
 
 library(terra)
@@ -304,39 +304,100 @@ plot(abs(differences) > 1)
 
 # Structuurvariatie binnen plots van 6 m diameter
 
-In @smith2021 valt de standaarddeviatie onder de noemer "surface roughness", en noemt daar root mean square roughness
+-   plotniveau: maat voor variatie in structuur binnen de plot
+    -   obv CHM
+    -   obv combinatie CHM en NDVI
 
+In @smith2021 staat een tabel met mogelijke metrieken voor structuurvariatie.
+Veel van deze metrieken reflecteren min of meer hetzelfde en ze zijn dan ook onderling vaak sterk gecorreleerd.
 
-```{r}
+@smith2021 deelt de verschillende metrieken in in vier categorieën: 
+
+- roughness
+- distribution
+- radial
+- angular
+
+De categorie "roughness" omvat metrieken die de "ruwheid" van het landschap weergeven.
+Hier valt dan ook bijvoorbeeld de welgekende standaardafwijking onder.
+
+De categorie "distribution" vertelt iets over de manier waarop de waarden (in ons geval hoogtemetingen) verdeeld zijn.
+Hier valt bijvoorbeeld een maat voor scheefheid (skewness) onder.
+
+De andere twee categorieën omvatten metrieken die iets zeggen over de (dominante) richting (Noord, Zuid, ...) waar een fenomeen zich voordoet.
+
+Vooral "roughness" en "distribution" zijn relevant voor de karakterisatie van structuurvariatie op plotniveau.
+We raden daarom aan om de statistisch welgekende metrieken te nemen, zijnde de standaardeviatie en de Fisher-Pearson coëfficiënt voor scheefheid om deze twee dimensies van structuurvariatie te vatten.
+
+We raden aan om niet de namen hiervoor te gebruiken die @smith2021 hieraan toekennen (respectievelijk "root mean square roughness" en "surface skewness"), maar gewoon de naam te gebruiken waaronder ze in de statistiek gekend zijn.
+Het is dan voor een lezer veel duidelijker wat er berekend wordt.
+
+(ref:geodiv-table) Selectie uit metrieken van het `geodiv` R package [@smith2021]
+
+```{r geodiv-table}
 table_smith <- data.frame(
   stringsAsFactors = FALSE,
             Metric = c("Average roughness",
                        "Root mean square roughness","Ten-point height",
                        "Root mean square slope","Area root mean square slope",
-                       "Surface area ratio","Surface bearing index","Fractal dimension",
+                       "Surface area ratio","Surface bearing index", "Surface skewness", "Fractal dimension",
                        "Dominant texture direction","Texture direction index"),
      Function.name = c("Sa","Sq","S10z","Sdq",
-                       "Sdq6","Sdr","Sbi","Sfd","Std","Stdi"),
+                       "Sdq6","Sdr","Sbi", "Ssk", "Sfd","Std","Stdi"),
        Description = c("Absolute deviation of values from the mean value",
                        "Standard deviation of surface values relative to the mean value",
                        "Average height above the mean surface for the five highest local maxima plus the average height below the mean surface for the five lowest local minima",
                        "Root mean square slope using the two-point method",
                        "Root mean square slope using the seven-point method","Ratio of a flat surface to the actual surface",
                        "Ratio of root mean square roughness (Sq) to height at 5% of the bearing area curve",
+                       "FisherPearson coefficient of skewness (asymmetry of the surface height distribution)",
                        "3D fractal dimension, calculated using the triangular prism surface area method.",
                        "Angle of dominating texture as found from the Fourier spectrum image","Relative dominance of Std"),
           Category = c("Roughness","Roughness",
                        "Roughness","Roughness","Roughness","Roughness",
-                       "Distribution","Radial","Angular","Angular")
+                       "Distribution", "Distribution",
+                       "Radial","Angular","Angular")
 )
 
 table_smith %>%
-  kable()
+  kable(caption = "(ref:geodiv-table)")
 ```
 
+Naast de keuze tussen metrieken is ook een keuze nodig wat te doen met eventuele grootschalige trends die in de kaart aanwezig zijn.
+Indien deze grootschalige trends op zich niet interessant zijn, kan er een detrending gedaan worden alvorens de metrieken te berekenen (op de afwijkingen ten opzichte van de grootschalige trends).
+
+Voor de CHM modellen is "detrending" vermoedelijk niet nodig.
+Trends in maaiveldhoogte zijn immers al verwijderd doordat CHM = DSM - DTM.
 
 
 ## CHM
+
+```{r skewness-functie}
+ssk <- function(x, ...) {
+  xbar <- mean(x, ...)
+  s <- sd(x, ...)
+  N <- length(na.omit(x))
+
+  val_unadj <- (sum((x - xbar) ^ 3, ...) / N) / (s ^ 3)
+
+  val <- (sqrt((N * (N - 1))) / (N - 2)) * val_unadj # adjusted Fisher-Pearson coefficient of skewness
+  return(val)
+}
+
+ssk_extract <- function(value, coverage_fraction, ...) {
+  xbar <- weighted.mean(x = value, w = coverage_fraction, ...)
+  s <- sqrt(Hmisc::wtd.var(x = value, weights = coverage_fraction, ...))
+  N <- length(na.omit(value))
+
+  val_unadj <- (sum((value * coverage_fraction - xbar) ^ 3, ...) / N) /
+    (s ^ 3)
+
+  val <- (sqrt((N * (N - 1))) / (N - 2)) * val_unadj # adjusted Fisher-Pearson coefficient of skewness
+  return(val)
+}
+
+```
+
 
 ```{r summarystats-chm-plot}
 out <- exactextractr::exact_extract(
@@ -347,39 +408,54 @@ out <- exactextractr::exact_extract(
   quantiles = c(0.25, 0.75)
 )
 
-
+ssk_out <- exactextractr::exact_extract(
+  chm_mosaic,
+  pb_plot,
+  fun = ssk_extract,
+  na.rm = TRUE
+)
 
 pb_plot_chm <- pb_plot %>%
-  bind_cols(out)
+  bind_cols(out) %>%
+  bind_cols(data.frame(ssk = ssk_out))
+```
 
+
+```{r mean-sd}
 pb_plot_chm %>%
   ggplot() +
   geom_point(aes(x = mean, y = stdev))
+```
 
+
+```{r mean-cv}
 pb_plot_chm %>%
   ggplot() +
   geom_point(aes(x = mean, y = coefficient_of_variation))
 ```
 
-```{r geodiv-sq, eval=FALSE}
-geodiv_sq <- geodiv::texture_image(raster::raster(chm_mosaic),
-                                    window_type = "circular",
-                                    size = 3,
-                                    metric = "sq",
-                                    in_meters = TRUE)
-
+```{r mean-ssk}
+pb_plot_chm %>%
+  ggplot() +
+  geom_point(aes(x = mean, y = ssk))
 ```
 
 
-Standaarddeviatie = goede maat voor absolute variabiliteit in vegetatiehoogte in een proefvlak
 
+Standaarddeviatie = goede maat voor absolute variabiliteit in vegetatiehoogte in een proefvlak (maat voor de spreiding van vegetatiehoogtemetingen)
 
 CV = goede maat voor verschillen in variabiliteit tussen proefvlakken
 
-```{r fig.height = 220/25.4}
+Scheefheid = 
+
+- 0: geen scheve verdeling (symmetrische verdeling).
+- < 0: negatieve scheefheid (piek zit rechts van het gemiddelde).
+- > 0: positieve scheefheid (piek zit links van het gemiddelde).
+
+```{r visualisatie-proefvlakken, fig.height = 220/25.4}
 proefvlakken <- pb_plot_chm %>%
   group_by(gebied, code_plot, nr, start_staal, mean, stdev, 
-           coefficient_of_variation, min, q25, q75, max) %>%
+           coefficient_of_variation, min, q25, q75, max, ssk) %>%
   nest() %>%
   mutate(
     plotchm = map(data, function(x){
@@ -391,8 +467,9 @@ proefvlakken <- pb_plot_chm %>%
                         mean = mean,
                         stdev = stdev,
                         cv = coefficient_of_variation,
+                        ssk = ssk,
                         plotchm = plotchm),
-                   function(code_plot, mean, stdev, cv, plotchm) {
+                   function(code_plot, mean, stdev, cv, ssk, plotchm) {
                      ggplot() +
                        geom_stars(data = plotchm) +
                        theme_void() +
@@ -400,10 +477,11 @@ proefvlakken <- pb_plot_chm %>%
                        labs(
                          title = code_plot,
                          subtitle = sprintf(
-                           "mean = %.1f,\nstdev = %.1f,\ncv = %.1f",
+                           "mean = %.1f,\nstdev = %.1f,\ncv = %.1f,\nssk = %.1f",
                            mean,
                            stdev,
-                           cv))
+                           cv,
+                           ssk))
                    })
     
   )
@@ -417,14 +495,118 @@ patchwork::wrap_plots(
   )
 ```
 
-<!--to do: functie schrijven om gradiëntgebaseerde landschapsmetrieken te berekenen via geodiv package-->
+
 
 ## CHM + NDVI
 
 # Gebiedsdekkende structuurkaart
 
+-   gebiedsniveau: een kaart die de structuur weergeeft
+
+
 ## CHM
+
+
+
+```{r focal-function}
+
+my_focal <- function(filename, ...) {
+  if (file.exists(filename)) {
+    terra::rast(filename)
+  } else {
+    terra::focal(filename = filename, ...)
+  }
+  
+}
+
+```
+
+
+```{r}
+# probeer hetzelfde als geodiv::texture_image, maar met terra
+# het lijkt efficiënter om terra::focal te gebruiken, evt 
+# in combinatie met summary functions van geodiv
+circle3 <- focalMat(chm_mosaic,
+                    d = 3,
+                    type = "circle",
+                    fillNA = TRUE)
+circle3[!is.na(circle3)] <- 1
+
+# 5 minuutjes
+chm_mosaic_fcircle3_sd <- my_focal(
+  x = chm_mosaic,
+  w = circle3,
+  fun = sd,
+  na.rm = TRUE,
+  filename = file.path(map_procesbeheer,
+                       "PB06_Drone_En_Beelden",
+                       "PB_afgeleide_data",
+                       "chm",
+                       paste0("Ename_20200831_CHM_mosaic",
+                              "_res",
+                              "0.25",
+                              "_fcircle3m_sd.tif")),
+  overwrite = FALSE)
+
+
+chm_mosaic_fcircle3_skewness <- my_focal(
+  x = chm_mosaic,
+  w = circle3,
+  fun = ssk,
+  na.rm = TRUE,
+  filename = file.path(map_procesbeheer,
+                       "PB06_Drone_En_Beelden",
+                       "PB_afgeleide_data",
+                       "chm",
+                       paste0("Ename_20200831_CHM_mosaic",
+                              "_res",
+                              "0.25",
+                              "_fcircle3m_ssk.tif")),
+  silent = FALSE,
+  overwrite = FALSE)
+```
+
+De kaarten tonen nu dezelfde info als we berekend hebben voor de structuurvariatie in een proefvlak.
+Elke pixel in de kaart geeft dus de waarde van de standaardafwijking of de scheefheid in een cirkel van 3 meter straal rond deze pixel (de resolutie is 25 cm x 25 cm).
+
+Een andere straal kiezen zal een andere kaart opleveren.
+Het is ook mogelijk om bijvoorbeeld een vierkant "moving window" te nemen in plaats van een cirkelvormig, dat resulteert in snellere berekeningen.
+Een andere optie is een weging toepassen waarbij cellen dichtbij een groter gewicht krijgen dan cellen verderaf.
+Voor de vergelijkbaarheid met de structuurvariatie op proefvlakniveau, lijkt het echter niet verkeerd om dezelfde 3 m straal cirkel te nemen als "moving window".
+
+(ref:kaart-sd) Kaart van structuurvariatie op basis van standaardafwijking in cirkel met straal 3 m (eenheid is meter)
+
+```{r kaart-sd, fig.cap = "(ref:kaart-sd)"}
+plot(chm_mosaic_fcircle3_sd)
+```
+
+(ref:kaart-ssk) Kaart van structuurvariatie op basis van maat voor scheefheid in cirkel met straal 3 m. In de tweede kaart zijn de waarden kleiner dan -1 op -1 gezet, waarden tussen -1 en 1 op 0 en waarden groter dan 1 op 1.
+
+
+```{r kaart-ssk, fig.cap = "(ref:kaart-ssk)"}
+plot(chm_mosaic_fcircle3_skewness)
+
+
+plot(classify(chm_mosaic_fcircle3_skewness,
+              rcl = data.frame(
+                from = c(-Inf, -1, 1),
+                to = c(-1, 1, +Inf),
+                becomes = c(-1, 0, 1))))
+```
+
 
 ## CHM + NDVI
 
+
+
 ## Classificatie
+
+Mogelijke pistes:
+
+- gebiedsdekkende structuurkaarten op basis van de metrieken (sd, ssk) indelen via thresholds
+
+- rechtstreeks op de kaarten met vegetatiehoogtes en ndvi een classificatie uitvoeren via één of ander algorithme (k-means of SOM lijken voor de hand liggende opties) en daarna de clusterkenmerken karakteriseren door achteraf metrieken (sd, ssk) te berekenen
+
+
+
+# Referenties
