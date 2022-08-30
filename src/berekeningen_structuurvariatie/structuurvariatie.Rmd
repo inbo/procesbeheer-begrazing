@@ -578,6 +578,109 @@ ndvi_mosaic <- rast(ndvimosaicname)
 plot(ndvi_mosaic)
 ```
 
+```{r points1000}
+set.seed(12)
+sample1000 <- pb_onderzoeksgebied %>%
+  st_sample(size = 1000, type = "hexagonal") %>%
+  st_as_sf() %>%
+  mutate(pointid = row_number())
+
+names(ndvi_mosaic) <- "ndvi"
+
+ndvi_df <- terra::extract(
+  ndvi_mosaic,
+  sample1000)
+
+names(chm_mosaic) <- "chm"
+
+chm_df <- terra::extract(chm_mosaic, sample1000)
+
+ndvi_chm_df <- ndvi_df %>%
+  inner_join(chm_df, by = "ID") %>%
+  as_tibble()
+
+
+```
+
+```{r fc3m-1000}
+set.seed(12)
+fc3m_1000 <- pb_onderzoeksgebied %>%
+  st_sample(size = 1000, type = "hexagonal") %>%
+  st_as_sf() %>%
+  st_buffer(dist = 3) %>%
+  mutate(pointid = row_number())
+
+names(ndvi_mosaic) <- "ndvi"
+
+fc3m_ndvi_df <- exactextractr::exact_extract(
+  ndvi_mosaic,
+  fc3m_1000,
+  fun = "mean",
+  force_df = TRUE,
+  append_cols = "pointid")
+
+names(chm_mosaic) <- "chm"
+
+fc3m_chm_df <- exactextractr::exact_extract(
+  chm_mosaic,
+  fc3m_1000,
+  fun = "mean",
+  force_df = TRUE,
+  append_cols = "pointid")
+
+fc3m_ndvi_chm_df <- fc3m_ndvi_df %>%
+  rename(mean_ndvi = mean) %>%
+  inner_join(fc3m_chm_df %>%
+               rename(mean_chm = mean),
+             by = "pointid") %>%
+  as_tibble()
+
+
+```
+
+
+```{r ndvi-chm-pointwise}
+ndvi_chm_df %>%
+  ggplot() + 
+  geom_point(aes(x = ndvi, y = chm))
+
+ndvi_chm_df %>%
+  filter(ndvi > 0, chm > 0) %>%
+  ggplot(aes(x = ndvi, y = chm)) + 
+  geom_point() +
+  geom_smooth() +
+  scale_y_log10()
+
+ndvi_chm_df %>%
+  filter(ndvi > 0, chm > 0) %>%
+  ggplot(aes(x = chm, y = ndvi)) + 
+  geom_point() +
+  geom_smooth(method = "lm") +
+  scale_x_log10()
+
+```
+
+
+```{r ndvi-chm-circlewise}
+fc3m_ndvi_chm_df %>%
+  ggplot() + 
+  geom_point(aes(x = mean_ndvi, y = mean_chm))
+
+fc3m_ndvi_chm_df %>%
+  filter(mean_ndvi > 0, mean_chm > 0) %>%
+  ggplot(aes(x = mean_ndvi, y = mean_chm)) + 
+  geom_point() +
+  geom_smooth() +
+  scale_y_log10()
+
+fc3m_ndvi_chm_df %>%
+  filter(mean_ndvi > 0, mean_chm > 0) %>%
+  ggplot(aes(x = mean_chm, y = mean_ndvi)) + 
+  geom_point() +
+  geom_smooth(method = "lm") +
+  scale_x_log10()
+
+```
 
 
 # Gebiedsdekkende structuurkaart
