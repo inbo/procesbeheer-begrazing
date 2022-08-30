@@ -191,7 +191,9 @@ calc_chm <- function(dsm,
 #' A digital surface model (drone image) is used as input to determine the
 #' extent for which ndvi is needed.
 #' The false-colour infrared image is obtained via a web coverage service (WCS).
-calc_ndvi <- function(dsm, overwrite = FALSE) {
+calc_ndvi <- function(dsm,
+                      target_resolution = 0.4,
+                      overwrite = FALSE) {
 
 
   # prelim check
@@ -205,7 +207,8 @@ calc_ndvi <- function(dsm, overwrite = FALSE) {
     dir.create(destination, recursive = TRUE)
   }
 
-  tifname <- paste0(gsub("DEM", "NDVI", dsm@ptr$names), ".tif")
+  tifname <- paste0(gsub("DEM", "NDVI", dsm@ptr$names),
+                    "_res", target_resolution, ".tif")
 
   if (file.exists(file.path(destination, tifname)) && !overwrite) {
     ndvi <- terra::rast(file.path(destination, tifname))
@@ -221,7 +224,7 @@ calc_ndvi <- function(dsm, overwrite = FALSE) {
   cir_raster <- get_coverage_wcs(wcs = "omz",
                               bbox = bbox_vec,
                               layername = "OI.OrthoimageCoverage.OMZ.CIR",
-                              resolution = 0.4)
+                              resolution = target_resolution)
   nir <- cir_raster[[1]]
   red <- cir_raster[[2]]
   ndvi <- (nir - red) / (nir + red)
@@ -233,7 +236,6 @@ calc_ndvi <- function(dsm, overwrite = FALSE) {
                      overwrite = overwrite)
 
   return(ndvi)
-
 }
 
 
