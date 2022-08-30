@@ -477,7 +477,7 @@ proefvlakken <- pb_plot_chm %>%
                        labs(
                          title = code_plot,
                          subtitle = sprintf(
-                           "mean = %.1f,\nstdev = %.1f,\ncv = %.1f,\nssk = %.1f",
+                           "mean = %.2f,\nstdev = %.2f,\ncv = %.2f,\nssk = %.2f",
                            mean,
                            stdev,
                            cv,
@@ -495,9 +495,90 @@ patchwork::wrap_plots(
   )
 ```
 
+```{r ecdf}
+values <- exactextractr::exact_extract(
+  chm_mosaic,
+  pb_plot,
+  include_cols = "code_plot",
+  include_area = TRUE) %>%
+  bind_rows() %>%
+  as_tibble()
+
+values %>%
+  ggplot() +
+  stat_ecdf(aes(x = value, colour = code_plot)) +
+  labs(x = "Vegetatiehoogte (m)",
+       y = "Proportie metingen kleiner dan vegetatiehoogte")
+```
+
+```{r densityplots}
+values %>%
+  ggplot() +
+  geom_density(aes(x = value, colour = code_plot)) +
+  labs(x = "Vegetatiehoogte (m)",
+       y = "Densiteit aan metingen")
+```
 
 
 ## CHM + NDVI
+
+```{r calc-ndvi}
+ndvi_res <- 0.25
+
+ndvi_b1 <- calc_ndvi(dsm = Ename_20200831_DEM_Blok1,
+                     target_resolution = ndvi_res,
+                     overwrite = FALSE)
+ndvi_b2 <- calc_ndvi(dsm = Ename_20200831_DEM_Blok2,
+                     target_resolution = ndvi_res,
+                     overwrite = FALSE)
+ndvi_b3 <- calc_ndvi(dsm = Ename_20200831_DEM_Blok3,
+                     target_resolution = ndvi_res,
+                     overwrite = FALSE)
+ndvi_b4 <- calc_ndvi(dsm = Ename_20200831_DEM_Blok4,
+                     target_resolution = ndvi_res,
+                     overwrite = FALSE)
+ndvi_b5 <- calc_ndvi(dsm = Ename_20200831_DEM_Blok5,
+                     target_resolution = ndvi_res,
+                     overwrite = FALSE)
+ndvi_b6 <- calc_ndvi(dsm = Ename_20200831_DEM_Blok6,
+                     target_resolution = ndvi_res,
+                     overwrite = FALSE)
+
+```
+
+
+```{r}
+ndvimosaicname <- file.path(get_map_procesbeheer(),
+                       "PB06_Drone_En_Beelden",
+                       "PB_afgeleide_data",
+                       "ndvi",
+                       paste0("Ename_20200831_NDVI_mosaic",
+                              "_res",
+                              "0.25",
+                              ".tif"))
+
+```
+
+```{r ndvi-mosaic-res0.25, eval=!file.exists(ndvimosaicname)}
+terra::mosaic(
+  ndvi_b1,
+  ndvi_b2,
+  ndvi_b3,
+  ndvi_b4,
+  ndvi_b5,
+  ndvi_b6,
+  filename = ndvimosaicname,
+  wopt = list(gdal = c("COMPRESS=LZW", "TFW=YES")),
+  overwrite = FALSE
+  )
+```
+
+```{r eval=file.exists(ndvimosaicname)}
+ndvi_mosaic <- rast(ndvimosaicname)
+plot(ndvi_mosaic)
+```
+
+
 
 # Gebiedsdekkende structuurkaart
 
