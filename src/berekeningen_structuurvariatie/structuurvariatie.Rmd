@@ -539,6 +539,52 @@ kde + ecdf + patchwork::plot_layout(guides = "collect") +
   patchwork::plot_annotation(tag_levels = "a")
 ```
 
+### Metrieken gebaseerd op ruimtelijke autocorrelatie
+
+@guimarães-steinicke2022
+
+> For this, we computed Geary's C index, an identifier of cluster points with similar attributes, assessed by the pixel spatial autocorrelation [49].
+> The Geary's C index lies between 0 and some unspecified values greater than 1.
+> Hence, values lower than 1 display an increase in positive spatial autocorrelation (more similar clusters---less clumpiness), while values close and higher than 1 demonstrate increasing negative spatial autocorrelation (more dissimilar clusters---high clumpiness).
+
+```{r}
+set.seed(12)
+sample1000 <- pb_onderzoeksgebied %>%
+  st_sample(size = 1000, type = "hexagonal") %>%
+  st_as_sf() %>%
+  mutate(pointid = row_number())
+
+names(chm_mosaic) <- "chm"
+
+chm_sf <- terra::extract(chm_mosaic, sample1000, xy = TRUE) %>%
+  st_as_sf(coords = c("x", "y"), crs = 31370) %>%
+  filter(!is.na(chm))
+
+library(gstat)
+chm_vg <- gstat::variogram(chm ~ 1,
+                           data = chm_sf,
+                           cutoff = 210,
+                           width = 7)
+chm_vg_fit <- fit.variogram(chm_vg, model = vgm("Exp"))
+plot(chm_vg, chm_vg_fit)
+
+chm_vg_dir <- gstat::variogram(chm ~ 1,
+                           data = chm_sf,
+                           alpha = c(0, 45, 90, 135),
+                           cutoff = 210,
+                           width = 7)
+chm_vg_dir_fit <- fit.variogram(chm_vg_dir, model = vgm("Exp"))
+
+plot(chm_vg_dir, chm_vg_dir_fit)
+
+```
+
+### Topografische openheid
+
+
+
+
+
 ## CHM + NDVI?
 
 Wat is NDVI?
@@ -740,7 +786,6 @@ my_focal <- function(filename, ...) {
   }
   
 }
-
 ```
 
 ```{r}
@@ -785,7 +830,10 @@ chm_mosaic_fcircle3_skewness <- my_focal(
                               "_fcircle3m_ssk.tif")),
   silent = FALSE,
   overwrite = FALSE)
+
 ```
+
+
 
 De kaarten tonen nu dezelfde info als we berekend hebben voor de structuurvariatie in een proefvlak.
 Elke pixel in de kaart geeft dus de waarde van de standaardafwijking of de scheefheid in een cirkel van 3 meter straal rond deze pixel (de resolutie is 25 cm x 25 cm).
@@ -814,6 +862,16 @@ plot(classify(chm_mosaic_fcircle3_skewness,
                 becomes = c(-1, 0, 1))))
 ```
 
+```{r calc-local-moran-map, eval=FALSE}
+chm_mosaic_moran <- autocor(chm_mosaic, w = circle3, global = FALSE)
+```
+
+
+```{r plot-local-moran-map, eval=FALSE}
+plot(chm_mosaic_moran)
+```
+
+
 ## CHM + NDVI
 
 ## Classificatie
@@ -822,9 +880,7 @@ Mogelijke pistes:
 
 -   gebiedsdekkende structuurkaarten op basis van de metrieken (sd, ssk) indelen via thresholds
 
-    -   Zie @storey2020 voor voorbeeld van classificatie op basis van thresholds en enkel hoogte, enkel spectrale gegevens of hybride van hoogte en spectrale gegevens.
-        Hybride gaf beste resultaat.
-        De bedoeling was hier echter classificatie in vegetatievormen (barren, subshrub, shrub, trees).
+    -   Zie @storey2020 voor voorbeeld van classificatie op basis van thresholds en enkel hoogte, enkel spectrale gegevens of hybride van hoogte en spectrale gegevens. Hybride gaf beste resultaat. De bedoeling was hier echter classificatie in vegetatievormen (barren, subshrub, shrub, trees).
 
 -   rechtstreeks op de kaarten met vegetatiehoogtes en ndvi een classificatie uitvoeren via één of ander algorithme (k-means of SOM lijken voor de hand liggende opties) en daarna de clusterkenmerken karakteriseren door achteraf metrieken (sd, ssk) te berekenen
 

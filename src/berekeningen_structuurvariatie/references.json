@@ -89,5 +89,58 @@
         "title": "Mapping plant growth forms using structure-from-motion data combined with spectral image derivatives",
         "type": "article-journal",
         "volume": "11"
+    },
+    {
+        "DOI": "10.3390/rs14071557",
+        "ISSN": "2072-4292",
+        "URL": "https://www.mdpi.com/2072-4292/14/7/1557",
+        "accessed": {
+            "date-parts": []
+        },
+        "author": [
+            {
+                "family": "Guimarães-Steinicke",
+                "given": "Claudia"
+            },
+            {
+                "family": "Weigelt",
+                "given": "Alexandra"
+            },
+            {
+                "family": "Ebeling",
+                "given": "Anne"
+            },
+            {
+                "family": "Eisenhauer",
+                "given": "Nico"
+            },
+            {
+                "family": "Wirth",
+                "given": "Christian"
+            }
+        ],
+        "container-title": "Remote Sensing",
+        "id": "guimarães-steinicke2022",
+        "issue": "7",
+        "issued": {
+            "date-parts": [
+                [
+                    2022,
+                    1
+                ]
+            ]
+        },
+        "key": "YQMYT9MT",
+        "language": "en",
+        "libraryid": "1",
+        "number": "7",
+        "page": "1557",
+        "providerkey": "2509FBBE-5BB0-44C4-B119-6083A81ED673",
+        "publisher": "Multidisciplinary",
+        "rights": "http://creativecommons.org/licenses/by/3.0/",
+        "source": "www.mdpi.com",
+        "title": "Diversity Effects on Canopy Structure Change throughout a Growing Season in Experimental Grassland Communities",
+        "type": "article-journal",
+        "volume": "14"
     }
 ]
