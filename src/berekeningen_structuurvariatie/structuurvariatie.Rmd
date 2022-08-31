@@ -11,7 +11,8 @@ editor_options:
 
 ```{r setup, include=FALSE}
 library(knitr)
-opts_chunk$set(echo = FALSE)
+opts_chunk$set(echo = FALSE,
+               warning = FALSE)
 
 
 library(terra)
@@ -26,6 +27,7 @@ library(geodiv)
 library(mapview)
 library(readxl)
 library(stars)
+library(patchwork)
 
 source(find_root_file("src/utils/utils.R", criterion = is_git_root))
 source(find_root_file("src/utils/geocomputations.R", criterion = is_git_root))
@@ -311,12 +313,12 @@ plot(abs(differences) > 1)
 In @smith2021 staat een tabel met mogelijke metrieken voor structuurvariatie.
 Veel van deze metrieken reflecteren min of meer hetzelfde en ze zijn dan ook onderling vaak sterk gecorreleerd.
 
-@smith2021 deelt de verschillende metrieken in in vier categorieën: 
+@smith2021 deelt de verschillende metrieken in in vier categorieën:
 
-- roughness
-- distribution
-- radial
-- angular
+-   roughness
+-   distribution
+-   radial
+-   angular
 
 De categorie "roughness" omvat metrieken die de "ruwheid" van het landschap weergeven.
 Hier valt dan ook bijvoorbeeld de welgekende standaardafwijking onder.
@@ -369,7 +371,6 @@ Indien deze grootschalige trends op zich niet interessant zijn, kan er een detre
 Voor de CHM modellen is "detrending" vermoedelijk niet nodig.
 Trends in maaiveldhoogte zijn immers al verwijderd doordat CHM = DSM - DTM.
 
-
 ## CHM
 
 ```{r skewness-functie}
@@ -398,7 +399,6 @@ ssk_extract <- function(value, coverage_fraction, ...) {
 
 ```
 
-
 ```{r summarystats-chm-plot}
 out <- exactextractr::exact_extract(
   chm_mosaic,
@@ -420,39 +420,44 @@ pb_plot_chm <- pb_plot %>%
   bind_cols(data.frame(ssk = ssk_out))
 ```
 
+Figuur \@ref(fig:mean-sd) toont de relatie van enkele metrieken die structuurvariatie weergeven tot de gemiddelde vegetatiehoogte in 10 proefvlakken.
 
-```{r mean-sd}
-pb_plot_chm %>%
+(ref:mean-sd) Relaties tussen standaarddeviatie, de variatiecoëfficiënt en scheefheid met de gemiddelde vegetatiehoogte in 10 proefvlakken.
+
+```{r mean-sd, fig.cap="(ref:mean-sd)"}
+msd <- pb_plot_chm %>%
   ggplot() +
   geom_point(aes(x = mean, y = stdev))
-```
-
-
-```{r mean-cv}
-pb_plot_chm %>%
+mcv <- pb_plot_chm %>%
   ggplot() +
   geom_point(aes(x = mean, y = coefficient_of_variation))
-```
-
-```{r mean-ssk}
-pb_plot_chm %>%
+mssk <- pb_plot_chm %>%
   ggplot() +
-  geom_point(aes(x = mean, y = ssk))
+  geom_point(aes(x = mean, y = ssk)) +
+  labs(y = "skewness")
+
+msd + mcv + mssk + patchwork::plot_layout(ncol = 2)
 ```
-
-
 
 Standaarddeviatie = goede maat voor absolute variabiliteit in vegetatiehoogte in een proefvlak (maat voor de spreiding van vegetatiehoogtemetingen)
 
 CV = goede maat voor verschillen in variabiliteit tussen proefvlakken
 
-Scheefheid = 
+Scheefheid =
 
-- 0: geen scheve verdeling (symmetrische verdeling).
-- < 0: negatieve scheefheid (piek zit rechts van het gemiddelde).
-- > 0: positieve scheefheid (piek zit links van het gemiddelde).
+-   0: geen scheve verdeling (symmetrische verdeling).
 
-```{r visualisatie-proefvlakken, fig.height = 220/25.4}
+-   \< 0: negatieve scheefheid (piek zit rechts van het gemiddelde).
+
+-   
+
+    > 0: positieve scheefheid (piek zit links van het gemiddelde).
+
+Figuur \@ref(fig:visualisatie-proefvlakken) laat toe om de verschillende metrieken en een kaart van de vegetatiehoogte binnen elk proefvlak onderling te vergelijken.
+
+(ref:visualisatie-proefvlakken) Vegetatiehoogteverschillen binnen de proefvlakken in Ename. Boven elk proefvlak staan de ermee overeenkomende metrieken die bepaalde aspecten van structuurvariatie weergeven.
+
+```{r visualisatie-proefvlakken, fig.height = 220/25.4, fig.cap="(ref:visualisatie-proefvlakken)"}
 proefvlakken <- pb_plot_chm %>%
   group_by(gebied, code_plot, nr, start_staal, mean, stdev, 
            coefficient_of_variation, min, q25, q75, max, ssk) %>%
@@ -495,7 +500,16 @@ patchwork::wrap_plots(
   )
 ```
 
-```{r ecdf}
+Figuur \@ref(fig:ecdf-pdf) geeft aan dat in plaats van te werken met één of meerdere statistische maten, we ook grafisch kunnen werken om verschillen in structuurvariatie te begrijpen.
+De verschillen in vorm van de cumulatieve distributie curves, die hier berekend werd voor vegetatiehoogte gedeeld door de maximale vegetatiehoogte in een proefvlak, vertellen ook iets over de verdeling.
+Concave curves die snel stijgen en dan afvlakken zijn typisch voor proefvlakken met vooral (relatief) lage vegetatie met weinig hoge vegetatie.
+Een voorbeeld hiervan is "venp_04".
+Voor convexe curves die traag stijgen geldt het omgekeerde (bijvoorbeeld "venp_08").
+Curves met eerst een convex en dan een concaaf deel, komen dan weer overeen met proefvlakken waarbij de vegetatiehoogte redelijk symmetrisch verdeeld is rond een gemiddelde (bijvoorbeeld "venp_01").
+
+(ref:ecdf-pdf) (a) densitietsplot van de vegetatiehoogtemetingen; (b) overeenkomstige empirische cumulatieve distributiefunctie van de relatieve vegetatiehoogtes, waarbij deze relatief gemaakt zijn door te delen door de maximale hoogte in een proefvlak.
+
+```{r ecdf-pdf, fig.cap = "(ref:ecdf-pdf)"}
 values <- exactextractr::exact_extract(
   chm_mosaic,
   pb_plot,
@@ -504,23 +518,53 @@ values <- exactextractr::exact_extract(
   bind_rows() %>%
   as_tibble()
 
-values %>%
+ecdf <- values %>%
+  mutate(value = ifelse(value < 0, 0, value)) %>%
+  group_by(code_plot) %>%
+  mutate(rel_value = value / max(value, na.rm = TRUE)) %>%
   ggplot() +
-  stat_ecdf(aes(x = value, colour = code_plot)) +
-  labs(x = "Vegetatiehoogte (m)",
+  stat_ecdf(aes(x = rel_value, colour = code_plot, linetype = code_plot)) +
+  labs(x = "Relatieve vegetatiehoogte (m)",
        y = "Proportie metingen kleiner dan vegetatiehoogte")
-```
 
-```{r densityplots}
-values %>%
+kde <- values %>%
+  mutate(value = ifelse(value < 0, 0, value)) %>%
   ggplot() +
-  geom_density(aes(x = value, colour = code_plot)) +
+  geom_density(aes(x = value, colour = code_plot, linetype = code_plot)) +
   labs(x = "Vegetatiehoogte (m)",
-       y = "Densiteit aan metingen")
+       y = "Densiteit aan metingen") +
+  theme(legend.position = "none")
+
+kde + ecdf + patchwork::plot_layout(guides = "collect") +
+  patchwork::plot_annotation(tag_levels = "a")
 ```
 
+## CHM + NDVI?
 
-## CHM + NDVI
+Wat is NDVI?
+
+NDVI = Normalized difference vegetation index
+
+De index meet de groenheid (bladgroen) en densiteit van de vegetatie.
+
+Ze wordt afgeleid van een "valse-kleuren infrarood" beeld.
+Hierin worden de banden van nabij infrarood, rood en groen van de sensor geassocieerd met de kleuren rood, groen en blauw van het scherm.
+
+Berekening:
+
+$$NDVI = \frac{NIR - RED}{NIR + RED}$$
+
+De mapping is dus:
+
+-   NIR = nabij-infrarood = band1 = "rood op het scherm"
+-   RED = rood = band2 = "groen op het scherm"
+
+Opgelet!
+NDVI wordt hier afgeleid uit het valse-kleuren infrarood beeld van de orthofotomozaïek zomerluchtopname gemaakt van 17 juni tot en met 1 juli 2018.
+De NDVI waarden reflecteren dus de toestand van de vegetatie in deze periode en de waarden worden negatief beïnvloed door stressfactoren zoals droogte die een groeiachterstand veroorzaken.
+De dronevluchten, waarmee de CHM bepaald werd, dateren echter van eind augustus 2020.
+We kunnen hier dus wel een verkenning doen van de relaties tussen vegetatiehoogte en NDVI, maar om dit effectief in het project te kunnen gebruiken op een meer betrouwbare manier, zouden beide variabelen dus over dezelfde periode ingezameld moeten worden.
+Dit kan alleen indien de sensor die gebruikt wordt bij de dronevluchten ook de NIR band capteert.
 
 ```{r calc-ndvi}
 ndvi_res <- 0.25
@@ -545,7 +589,6 @@ ndvi_b6 <- calc_ndvi(dsm = Ename_20200831_DEM_Blok6,
                      overwrite = FALSE)
 
 ```
-
 
 ```{r}
 ndvimosaicname <- file.path(get_map_procesbeheer(),
@@ -638,59 +681,54 @@ fc3m_ndvi_chm_df <- fc3m_ndvi_df %>%
 
 ```
 
+Figuur \@ref(fig:ndvi-chm-plots) toont aan dat er een lineair verband is tussen de NDVI en log-gestransformeerde vegetatiehoogte.
+Bij een vegetatiehoogte van 1 m is de NDVI gemiddeld 0.37 (gemeten in een puntlocatie).
+Bij elke sprong in grootte-orde (mm naar cm, cm naar dm, dm naar m, ...), neemt de NDVI gemiddeld toe met 0.077.
+De individuele metingen vertonen een vrij grote spreiding rond dit gemiddelde.
+Deze afwijkingen (residuen) zouden in principe kunnen gebruikt worden om, gegeven een bepaalde vegetatie-hoogte, aan te geven of de vegetatie minder of meer groen en dens is dan gemiddeld.
+De afwijkingen die we nu echter zien, hebben echter ook te maken met het verschil in tijdstip van de verschillende remote sensing producten.
+Bijvoorbeeld, een hoge NDVI en een zeer lage vegetatiehoogte heeft misschien gewoon te maken met begrazing of maaibeheer voorafgaand aan de periode van de dronevluchten.
+Bovendien zijn de relatieve fouten op vegetatiehoogtes in grootte-ordes van mm tot enkele dm zeer groot.
 
-```{r ndvi-chm-pointwise}
-ndvi_chm_df %>%
+(ref:ndvi-chm-plots) Relaties tussen vegetatiehoogte zoals gemeten door CHM en NDVI. (a en b) zijn op basis van 1000 waarden op puntlocaties op een hexagonaal grid, (c en d) zijn op basis van gemiddelde waarden in een 3 m buffer rond deze puntlocaties. (a en c) ongetransformeerde assen. (b en d) hier is vegetatiehoogte in de log schaal en zijn enkel strikt positieve waarden behouden. De regressielijn is van een lineair model met normaal verdeelde residuen.
+
+```{r ndvi-chm-plots, fig.cap = "(ref:ndvi-chm-plots)"}
+p1 <- ndvi_chm_df %>%
   ggplot() + 
-  geom_point(aes(x = ndvi, y = chm))
+  geom_point(aes(x = chm, y = ndvi),
+             alpha = 0.3)
 
-ndvi_chm_df %>%
-  filter(ndvi > 0, chm > 0) %>%
-  ggplot(aes(x = ndvi, y = chm)) + 
-  geom_point() +
-  geom_smooth() +
-  scale_y_log10()
-
-ndvi_chm_df %>%
+p2 <- ndvi_chm_df %>%
   filter(ndvi > 0, chm > 0) %>%
   ggplot(aes(x = chm, y = ndvi)) + 
-  geom_point() +
+  geom_point(alpha = 0.3) +
   geom_smooth(method = "lm") +
-  scale_x_log10()
+  scale_x_log10(labels = ~ format(.x,
+                                  scientific = FALSE,
+                                  drop0trailing = TRUE))
 
-```
-
-
-```{r ndvi-chm-circlewise}
-fc3m_ndvi_chm_df %>%
+p3 <- fc3m_ndvi_chm_df %>%
   ggplot() + 
-  geom_point(aes(x = mean_ndvi, y = mean_chm))
+  geom_point(aes(x = mean_chm, y = mean_ndvi),
+             alpha = 0.3)
 
-fc3m_ndvi_chm_df %>%
-  filter(mean_ndvi > 0, mean_chm > 0) %>%
-  ggplot(aes(x = mean_ndvi, y = mean_chm)) + 
-  geom_point() +
-  geom_smooth() +
-  scale_y_log10()
-
-fc3m_ndvi_chm_df %>%
+p4 <- fc3m_ndvi_chm_df %>%
   filter(mean_ndvi > 0, mean_chm > 0) %>%
   ggplot(aes(x = mean_chm, y = mean_ndvi)) + 
-  geom_point() +
+  geom_point(alpha = 0.3) +
   geom_smooth(method = "lm") +
-  scale_x_log10()
+  scale_x_log10(labels = ~ format(.x,
+                                  scientific = FALSE,
+                                  drop0trailing = TRUE))
 
+(p1 + p2) / (p3 + p4) + patchwork::plot_annotation(tag_levels = "a")
 ```
-
 
 # Gebiedsdekkende structuurkaart
 
 -   gebiedsniveau: een kaart die de structuur weergeeft
 
-
 ## CHM
-
-
 
 ```{r focal-function}
 
@@ -704,7 +742,6 @@ my_focal <- function(filename, ...) {
 }
 
 ```
-
 
 ```{r}
 # probeer hetzelfde als geodiv::texture_image, maar met terra
@@ -766,7 +803,6 @@ plot(chm_mosaic_fcircle3_sd)
 
 (ref:kaart-ssk) Kaart van structuurvariatie op basis van maat voor scheefheid in cirkel met straal 3 m. In de tweede kaart zijn de waarden kleiner dan -1 op -1 gezet, waarden tussen -1 en 1 op 0 en waarden groter dan 1 op 1.
 
-
 ```{r kaart-ssk, fig.cap = "(ref:kaart-ssk)"}
 plot(chm_mosaic_fcircle3_skewness)
 
@@ -778,19 +814,18 @@ plot(classify(chm_mosaic_fcircle3_skewness,
                 becomes = c(-1, 0, 1))))
 ```
 
-
 ## CHM + NDVI
-
-
 
 ## Classificatie
 
 Mogelijke pistes:
 
-- gebiedsdekkende structuurkaarten op basis van de metrieken (sd, ssk) indelen via thresholds
+-   gebiedsdekkende structuurkaarten op basis van de metrieken (sd, ssk) indelen via thresholds
 
-- rechtstreeks op de kaarten met vegetatiehoogtes en ndvi een classificatie uitvoeren via één of ander algorithme (k-means of SOM lijken voor de hand liggende opties) en daarna de clusterkenmerken karakteriseren door achteraf metrieken (sd, ssk) te berekenen
+    -   Zie @storey2020 voor voorbeeld van classificatie op basis van thresholds en enkel hoogte, enkel spectrale gegevens of hybride van hoogte en spectrale gegevens.
+        Hybride gaf beste resultaat.
+        De bedoeling was hier echter classificatie in vegetatievormen (barren, subshrub, shrub, trees).
 
-
+-   rechtstreeks op de kaarten met vegetatiehoogtes en ndvi een classificatie uitvoeren via één of ander algorithme (k-means of SOM lijken voor de hand liggende opties) en daarna de clusterkenmerken karakteriseren door achteraf metrieken (sd, ssk) te berekenen
 
 # Referenties

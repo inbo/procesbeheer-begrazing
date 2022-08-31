@@ -54,5 +54,40 @@
         "title-short": "The geodiv r package",
         "type": "article-journal",
         "volume": "12"
+    },
+    {
+        "DOI": "10.1080/2150704x.2020.1730467",
+        "ISSN": "2150-704X",
+        "PMCID": "PMC7607922",
+        "PMID": "33149957",
+        "URL": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7607922/",
+        "accessed": {
+            "date-parts": []
+        },
+        "author": [
+            {
+                "family": "Storey",
+                "given": "Emanuel Arnal"
+            }
+        ],
+        "container-title": "Remote sensing letters (Print)",
+        "container-title-short": "Remote Sens Lett",
+        "id": "storey2020",
+        "issue": "5",
+        "issued": {
+            "date-parts": [
+                [
+                    2020
+                ]
+            ]
+        },
+        "key": "ZN9B9AYI",
+        "libraryid": "1",
+        "page": "426-435",
+        "providerkey": "2509FBBE-5BB0-44C4-B119-6083A81ED673",
+        "source": "PubMed Central",
+        "title": "Mapping plant growth forms using structure-from-motion data combined with spectral image derivatives",
+        "type": "article-journal",
+        "volume": "11"
     }
 ]
