@@ -189,6 +189,7 @@ ggplot() +
              size = 4)
 ```
 
+
 ## Keuze resolutie en (dis)aggregatiemethoden
 
 Probleem:
@@ -549,35 +550,99 @@ kde + ecdf + patchwork::plot_layout(guides = "collect") +
 
 ```{r}
 set.seed(12)
-sample1000 <- pb_onderzoeksgebied %>%
-  st_sample(size = 1000, type = "hexagonal") %>%
+sample10000 <- pb_onderzoeksgebied %>%
+  st_sample(size = 10000, type = "hexagonal") %>%
   st_as_sf() %>%
   mutate(pointid = row_number())
 
 names(chm_mosaic) <- "chm"
 
-chm_sf <- terra::extract(chm_mosaic, sample1000, xy = TRUE) %>%
+chm_sf <- terra::extract(chm_mosaic, sample10000, xy = TRUE) %>%
   st_as_sf(coords = c("x", "y"), crs = 31370) %>%
   filter(!is.na(chm))
 
 library(gstat)
 chm_vg <- gstat::variogram(chm ~ 1,
                            data = chm_sf,
-                           cutoff = 210,
-                           width = 7)
+                           cutoff = 150,
+                           width = 3)
 chm_vg_fit <- fit.variogram(chm_vg, model = vgm("Exp"))
 plot(chm_vg, chm_vg_fit)
 
 chm_vg_dir <- gstat::variogram(chm ~ 1,
                            data = chm_sf,
                            alpha = c(0, 45, 90, 135),
-                           cutoff = 210,
-                           width = 7)
+                           cutoff = 150,
+                           width = 3)
 chm_vg_dir_fit <- fit.variogram(chm_vg_dir, model = vgm("Exp"))
 
 plot(chm_vg_dir, chm_vg_dir_fit)
 
 ```
+
+Herdoen op kleinere schaal en met cutoff van 10 - 50 m of zo.
+=> beter zicht op gras - bos overgang
+
+Ander idee:
+
+- filter segmentation 
+- verzachten of verscherpen van overgangen (scherpe vs graduele overgangen)
+
+https://github.com/bnosac/image
+
+>Sobel filters (for edge detection): fx=matrix(c(-1,-2,-1,0,0,0,1,2,1), nrow=3) fy=matrix(c(1,0,-1,2,0,-2,1,0,-1), nrow=3)
+
+### Gradiëntsterkte
+
+Om beter zicht te krijgen op gradiënten in het terrein (bv grasland overgang naar bos), kunnen we technieken toepassen uit image processing.
+Bijvoorbeeld technieken voor edge detection.
+
+Het idee hier is om in de x-richting en in de y-richting een (benadering) van de eerste afgeleide te berekenen (= gradiënt / helling).
+Vervolgens kunnen deze beide componenten via de Euclidische norm gecombineerd worden tot een gradiëntsterkte (of gradiënt intensiteit):
+
+
+$$|{\nabla f}| = \sqrt{\bigg(\frac{\partial}{\partial x}f\bigg)^2 + \bigg(\frac{\partial}{\partial y}f\bigg)^2}$$
+
+
+Er kan ook een gradiënt richting uit afgeleid worden:
+
+$$\sphericalangle ({\nabla f}) = \text{atan2}(\frac{\partial}{\partial y}f, \frac{\partial}{\partial x}f)$$
+
+```{r}
+library(imager)
+testje <- imager::as.cimg(
+  raster::raster(chm_mosaic), maxpixels = 1e8)
+nas <- px.na(testje)
+testje[nas] <- 0
+out <- testje %>%
+  isoblur(2) %>%
+  imgradient() %>%
+  enorm()
+
+out[nas] <- NA
+
+# convert back to terra spatraster
+# source: https://gitlab.irstea.fr/jean-matthieu.monnet/lidaRtRee/
+cimg_to_spatraster <- function(cimg, r = NULL) {
+  # convert to SpatRaster
+  dem <- terra::rast(t(as.matrix(cimg)))
+  # if reference is provided
+  if (!is.null(r)) {
+    # specifiy extent
+    terra::ext(dem) <- terra::ext(r)
+    # specify crs
+    terra::crs(dem) <- terra::crs(r)
+  }
+  dem
+}
+
+out <- cimg_to_spatraster(out, r = chm_mosaic)
+plot(out)
+
+
+```
+
+
 
 ### Topografische openheid
 
