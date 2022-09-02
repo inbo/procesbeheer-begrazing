@@ -172,13 +172,6 @@ raster::raster(Ename_20200831_DEM_Blok1) %>%
           maxpixels = 1e6)
 ```
 
-```{r plot-droneblokken-ename}
-pb_onderzoeksgebied %>%
-  ggplot() +
-  geom_sf() +
-  geom_sf(data = pb_subplot_center,
-          aes(colour = code_plot), size = 4)
-```
 
 ```{r vh25-rtk}
 ggplot() +
@@ -187,7 +180,8 @@ ggplot() +
   coord_equal() +
   geom_point(data = pb_subplot_center,
              aes(x = x, y = y, colour = code_plot),
-             size = 4)
+             size = 4) +
+  scale_fill_viridis_c()
 ```
 
 
@@ -258,9 +252,7 @@ chm_b6 <- map(chm_res,
               })
 ```
 
-```{r}
-chm_b1
-```
+(TO DO wanneer de RTK + controle hoogtemetingen beschikbaar zijn)
 
 ## Berekening CHM en overlappende blokken
 
@@ -364,7 +356,7 @@ table_smith <- data.frame(
 )
 
 table_smith %>%
-  kable(caption = "(ref:geodiv-table)")
+  gt::gt(caption = "(ref:geodiv-table)")
 ```
 
 Naast de keuze tussen metrieken is ook een keuze nodig wat te doen met eventuele grootschalige trends die in de kaart aanwezig zijn.
@@ -560,7 +552,7 @@ Uit deze parameters kunnen dan metrieken worden berekend die iets zeggen over de
 
 (ref:semivarianceplots) Links: CHM model rond proefvlak met buffer van 3 m en 15 m. Rechts: semivariogram voor vier richtingen. Hoeken 0, 45, 90, 135 komen overeen met respectievelijk N-Z, NO-ZW, O-W, ZO-NW.
 
-```{r semivarianceplots, fig.cap="(ref:semivarianceplots)"}
+```{r semivarianceplots, fig.cap="(ref:semivarianceplots)", out.width="100%"}
 aa <- pb_plot_chm %>%
   filter(!code_plot %in% c("venp_11", "venp_12")) %>%
   st_buffer(dist = 15) %>%
@@ -594,7 +586,8 @@ pmap(list(title = aa$code_plot,
          geom_sf(data = plotpoly %>%
                    st_buffer(dist = 3 - 15),
                  alpha = 0,
-                 colour = "yellow1")
+                 colour = "yellow1") +
+         theme_void()
        p2 <- evg %>%
          ggplot() + 
          geom_point(aes(x = dist,
@@ -605,9 +598,6 @@ pmap(list(title = aa$code_plot,
               y = "semivariantie (m²)")
        p1 + p2 + plot_annotation(title = title)
      })
-
-
-
 ```
 
 
@@ -641,9 +631,34 @@ gradmag_mosaic <- calc_gradient_magnitude(chm_mosaic,
                                           blur = TRUE,
                                           sigma = 2)
 
-plot(gradmag_mosaic)
+ggplot() +
+  geom_stars(data = st_as_stars(gradmag_mosaic),
+             downsample = 11) +
+  scale_fill_viridis_c() +
+  coord_equal() +
+  theme_void()
 ```
 
+```{r}
+t1 <- terra::crop(gradmag_mosaic, chm_b1[[2]]) %>%
+  st_as_stars()
+names(t1) <- "gradiënt"
+t2 <- st_as_stars(chm_b1[[2]])
+names(t2) <- "chm"
+
+p1 <- ggplot() +
+  geom_stars(data = t2, downsample = 3) +
+  coord_equal() +
+  theme_void()
+
+p2 <- ggplot() +
+  geom_stars(data = t1, downsample = 3) +
+  coord_equal() +
+  theme_void()
+
+p1 + p2 &
+  scale_fill_viridis_c()
+```
 
 
 ```{r gradmag-proefvlakken, fig.cap = "(ref:gradmag-proefvlakken)"}
@@ -677,15 +692,25 @@ patchwork::wrap_plots(
 ```
 
 
-### Topografische openheid
+### Topografische openheid?
+
+TO DO
+
+- hoek ten opzichte van zenith in 8 richtingen
+- cf code voor mas meetnet
+
+
+### Lacunarity / gap analysis?
+
+gaps => ecologische niches theorie?
+
+https://github.com/STBrinkmann/spatLac
 
 
 
 
 
 ## CHM + NDVI?
-
-Wat is NDVI?
 
 NDVI = Normalized difference vegetation index
 
@@ -762,7 +787,13 @@ terra::mosaic(
 
 ```{r eval=file.exists(ndvimosaicname)}
 ndvi_mosaic <- rast(ndvimosaicname)
-plot(ndvi_mosaic)
+ggplot() + 
+  geom_stars(data = st_as_stars(ndvi_mosaic),
+             downsample = 11) +
+  coord_equal() +
+  theme_void() +
+  scale_fill_viridis_c() +
+  labs(fill = "ndvi")
 ```
 
 ```{r points1000}
@@ -944,29 +975,91 @@ Voor de vergelijkbaarheid met de structuurvariatie op proefvlakniveau, lijkt het
 (ref:kaart-sd) Kaart van structuurvariatie op basis van standaardafwijking in cirkel met straal 3 m (eenheid is meter)
 
 ```{r kaart-sd, fig.cap = "(ref:kaart-sd)"}
-plot(chm_mosaic_fcircle3_sd)
+ggplot() +
+  geom_stars(data = st_as_stars(chm_mosaic_fcircle3_sd),
+             downsample = 11) +
+  coord_equal() +
+  theme_void() +
+  scale_fill_viridis_c() +
+  labs(fill = "sd")
 ```
 
 (ref:kaart-ssk) Kaart van structuurvariatie op basis van maat voor scheefheid in cirkel met straal 3 m. In de tweede kaart zijn de waarden kleiner dan -1 op -1 gezet, waarden tussen -1 en 1 op 0 en waarden groter dan 1 op 1.
 
 ```{r kaart-ssk, fig.cap = "(ref:kaart-ssk)"}
-plot(chm_mosaic_fcircle3_skewness)
+p1 <- ggplot() +
+  geom_stars(data = st_as_stars(chm_mosaic_fcircle3_skewness),
+             downsample = 11) +
+  coord_equal() +
+  theme_void() +
+  scale_fill_viridis_c() +
+  labs(fill = "skewness")
 
+p2 <- ggplot() +
+  geom_stars(data = st_as_stars(chm_mosaic_fcircle3_skewness),
+             downsample = 11) +
+  coord_equal() +
+  theme_void() +
+  scale_fill_viridis_b(breaks = c(-1, 1, +Inf)) +
+  labs(fill = "binned skewness")
+  
 
-plot(classify(chm_mosaic_fcircle3_skewness,
-              rcl = data.frame(
-                from = c(-Inf, -1, 1),
-                to = c(-1, 1, +Inf),
-                becomes = c(-1, 0, 1))))
+p1 + p2
 ```
 
-```{r calc-local-moran-map, eval=FALSE}
+### local Moran map
+
+```{r localmoranname}
+localmoranname <- file.path(get_map_procesbeheer(),
+                       "PB06_Drone_En_Beelden",
+                       "PB_afgeleide_data",
+                       "chm",
+                       paste0("Ename_20200831_CHM_mosaic",
+                              "_res",
+                              "0.25_localmoran",
+                              ".tif"))
+```
+
+
+```{r calc-local-moran-map, eval=!file.exists(localmoranname)}
 chm_mosaic_moran <- autocor(chm_mosaic, w = circle3, global = FALSE)
+writeRaster(chm_mosaic_moran, localmoranname)
+```
+
+```{r eval = file.exists(localmoranname)}
+chm_mosaic_moran <- rast(localmoranname)
 ```
 
 
-```{r plot-local-moran-map, eval=FALSE}
-plot(chm_mosaic_moran)
+```{r plot-local-moran-map}
+ggplot() +
+  geom_stars(data = st_as_stars(chm_mosaic_moran),
+             downsample = 11) +
+  coord_equal() +
+  theme_void() +
+  scale_fill_viridis_c() +
+  labs(fill = "local Moran")
+```
+
+### Correlaties tussen metrieken
+
+```{r}
+moran <- terra::extract(chm_mosaic_moran, sample1000 %>% st_buffer(dist = 3), fun = "mean")
+gradm <- terra::extract(gradmag_mosaic, sample1000 %>% st_buffer(dist = 3), fun = "mean")
+sd <- terra::extract(chm_mosaic_fcircle3_sd, sample1000)
+ssk <- terra::extract(chm_mosaic_fcircle3_skewness, sample1000)
+
+
+
+data.frame(moran = moran$chm, gradm = gradm$lyr.1,
+           sd = sd$focal_sd, skewness = ssk$Ename_20200831_DEM_Blok1) %>%
+  GGally::ggpairs()
+
+combined <- c(chm_mosaic_moran, gradmag_mosaic,
+              chm_mosaic_fcircle3_skewness, chm_mosaic_fcircle3_sd)
+names(combined) <- c("moran", "gradmag", "skewness", "sd")
+
+plot(combined)
 ```
 
 
