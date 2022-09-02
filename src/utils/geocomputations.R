@@ -349,3 +349,45 @@ calc_bufferstats <- function(
              rename(result = areas))
   }
 }
+
+
+calc_gradient_magnitude <- function(spatraster,
+                                    maxpixels = 1e8,
+                                    blur = FALSE,
+                                    ...) {
+  require(imager)
+  im <- as.cimg(
+    raster::raster(spatraster),
+    maxpixels = maxpixels)
+  nas <- px.na(im)
+  im[nas] <- 0
+  if (blur) {
+    im <- isoblur(im, ...)
+  }
+  out <- im %>%
+    imgradient() %>%
+    enorm()
+
+  out[nas] <- NA
+
+  out <- cimg_to_spatraster(out, r = chm_mosaic)
+  return(out)
+}
+
+
+# convert Cimg back to terra spatraster
+# source: https://gitlab.irstea.fr/jean-matthieu.monnet/lidaRtRee/
+cimg_to_spatraster <- function(cimg, r = NULL) {
+  # convert to SpatRaster
+  dem <- terra::rast(t(as.matrix(cimg)))
+  # if reference is provided
+  if (!is.null(r)) {
+    # specifiy extent
+    terra::ext(dem) <- terra::ext(r)
+    # specify crs
+    terra::crs(dem) <- terra::crs(r)
+  }
+  dem
+}
+
+

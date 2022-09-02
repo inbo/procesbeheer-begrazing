@@ -12,7 +12,8 @@ editor_options:
 ```{r setup, include=FALSE}
 library(knitr)
 opts_chunk$set(echo = FALSE,
-               warning = FALSE)
+               warning = FALSE,
+               message = FALSE)
 
 
 library(terra)
@@ -542,55 +543,73 @@ kde + ecdf + patchwork::plot_layout(guides = "collect") +
 
 ### Metrieken gebaseerd op ruimtelijke autocorrelatie
 
-@guimarães-steinicke2022
+We kunnen een variogram berekenen om ruimtelijke autocorrelatie in beeld te brengen.
+We berekenen dit op het CHM in een buffer van 15 m rond elk van de proefvlakcentrums.
+Een variogram toont hoe de variantie toeneemt (uitzonderlijk kan het ook afnemen) bij toenemende interpuntafstanden.
+Dit kan in verschillende richtingen worden berekend, zodat bijvoorbeeld gedetecteerd kan worden of er verschillen zijn ten gevolge van een structuur in het landschap (bv bosrand).
+Zie figuur \@ref(fig:semivarianceplots).
+Voor proefvlak "venp_01" zien we een toename gevolgd door een afname vooral in de N-Z richting.
+Dit wijst op een cyclisch zich herhalend ruimtelijk patroon, zoals je bijvoorbeeld zou hebben bij een rabattenstructuur.
 
-> For this, we computed Geary's C index, an identifier of cluster points with similar attributes, assessed by the pixel spatial autocorrelation [49].
-> The Geary's C index lies between 0 and some unspecified values greater than 1.
-> Hence, values lower than 1 display an increase in positive spatial autocorrelation (more similar clusters---less clumpiness), while values close and higher than 1 demonstrate increasing negative spatial autocorrelation (more dissimilar clusters---high clumpiness).
+Aan een empirisch variogram kunnen modellen worden gefit die de vorm van de curve parametrisch beschrijven.
+Uit deze parameters kunnen dan metrieken worden berekend die iets zeggen over de manier waarop de hoogtemetingen autocorrelatie vertonen:
 
-```{r}
-set.seed(12)
-sample10000 <- pb_onderzoeksgebied %>%
-  st_sample(size = 10000, type = "hexagonal") %>%
-  st_as_sf() %>%
-  mutate(pointid = row_number())
+- range: de interpuntafstand waarop de semivariantie niet meer substantieel toeneemt
+- sill: de semivariantie bij interpuntafstand gelijk aan de range
+- nugget: de semivariantie bij interpuntafstand 0
 
-names(chm_mosaic) <- "chm"
+(ref:semivarianceplots) Links: CHM model rond proefvlak met buffer van 3 m en 15 m. Rechts: semivariogram voor vier richtingen. Hoeken 0, 45, 90, 135 komen overeen met respectievelijk N-Z, NO-ZW, O-W, ZO-NW.
 
-chm_sf <- terra::extract(chm_mosaic, sample10000, xy = TRUE) %>%
-  st_as_sf(coords = c("x", "y"), crs = 31370) %>%
-  filter(!is.na(chm))
+```{r semivarianceplots, fig.cap="(ref:semivarianceplots)"}
+aa <- pb_plot_chm %>%
+  filter(!code_plot %in% c("venp_11", "venp_12")) %>%
+  st_buffer(dist = 15) %>%
+  group_by(code_plot) %>%
+  nest() %>%
+  mutate(rast_b15 = map(data, ~terra::crop(chm_mosaic, .x, mask = TRUE)),
+         sf_b15 = map(rast_b15, function(x) {
+           out <- stars::st_as_stars(x) %>% st_as_sf()
+         }),
+         evg = map(sf_b15, function(x) {
+           gstat::variogram(values ~ 1,
+                           data = x,
+                           cutoff = 10,
+                           width = 0.5,
+                           alpha = c(0,45,90,135))
+         }))
 
-library(gstat)
-chm_vg <- gstat::variogram(chm ~ 1,
-                           data = chm_sf,
-                           cutoff = 150,
-                           width = 3)
-chm_vg_fit <- fit.variogram(chm_vg, model = vgm("Exp"))
-plot(chm_vg, chm_vg_fit)
 
-chm_vg_dir <- gstat::variogram(chm ~ 1,
-                           data = chm_sf,
-                           alpha = c(0, 45, 90, 135),
-                           cutoff = 150,
-                           width = 3)
-chm_vg_dir_fit <- fit.variogram(chm_vg_dir, model = vgm("Exp"))
+pmap(list(title = aa$code_plot,
+          plotpoly = aa$data,
+          rr = aa$rast_b15,
+          evg = aa$evg),
+     function(title = title, plotpoly = plotpoly,
+              rr = rr, evg = evg) {
+       rs <- rr %>%
+         st_as_stars()
+       p1 <- ggplot() + 
+         geom_stars(data = rs) +
+         geom_sf(data = plotpoly, alpha = 0,
+                 colour = "yellow1") +
+         geom_sf(data = plotpoly %>%
+                   st_buffer(dist = 3 - 15),
+                 alpha = 0,
+                 colour = "yellow1")
+       p2 <- evg %>%
+         ggplot() + 
+         geom_point(aes(x = dist,
+                        y = gamma,
+                        colour = factor(dir.hor))) +
+         labs(colour = "hoek",
+              x = "afstand (m)",
+              y = "semivariantie (m²)")
+       p1 + p2 + plot_annotation(title = title)
+     })
 
-plot(chm_vg_dir, chm_vg_dir_fit)
+
 
 ```
 
-Herdoen op kleinere schaal en met cutoff van 10 - 50 m of zo.
-=> beter zicht op gras - bos overgang
-
-Ander idee:
-
-- filter segmentation 
-- verzachten of verscherpen van overgangen (scherpe vs graduele overgangen)
-
-https://github.com/bnosac/image
-
->Sobel filters (for edge detection): fx=matrix(c(-1,-2,-1,0,0,0,1,2,1), nrow=3) fy=matrix(c(1,0,-1,2,0,-2,1,0,-1), nrow=3)
 
 ### Gradiëntsterkte
 
@@ -608,40 +627,54 @@ Er kan ook een gradiënt richting uit afgeleid worden:
 
 $$\sphericalangle ({\nabla f}) = \text{atan2}(\frac{\partial}{\partial y}f, \frac{\partial}{\partial x}f)$$
 
-```{r}
-library(imager)
-testje <- imager::as.cimg(
-  raster::raster(chm_mosaic), maxpixels = 1e8)
-nas <- px.na(testje)
-testje[nas] <- 0
-out <- testje %>%
-  isoblur(2) %>%
-  imgradient() %>%
-  enorm()
+Figuur \@ref(fig:gradmag) laat zien dat de sterkste gradiënten zich situeren in de kruinen van de bomen en bij scherpe overgangen van bos of bomenrijen naar grasland.
 
-out[nas] <- NA
+Figuur \@ref(fig:gradmag-proefvlakken) toont de gradiëntsterkte binnen de proefvlakken. Dus ook in lage vegetaties (< 2m) geeft deze kaart aan waar de overgangen zijn en hoe sterk deze zijn.
 
-# convert back to terra spatraster
-# source: https://gitlab.irstea.fr/jean-matthieu.monnet/lidaRtRee/
-cimg_to_spatraster <- function(cimg, r = NULL) {
-  # convert to SpatRaster
-  dem <- terra::rast(t(as.matrix(cimg)))
-  # if reference is provided
-  if (!is.null(r)) {
-    # specifiy extent
-    terra::ext(dem) <- terra::ext(r)
-    # specify crs
-    terra::crs(dem) <- terra::crs(r)
-  }
-  dem
-}
+(ref:gradmag) Gradiëntsterktekaart. De eenheid is [m/m]. Hogere waarden komen overeen met zones waar een sterkere overgang is van laag naar hoog. Vooraf aan de berekening van de gradiëntsterkte werd het CHM model eerst gesmooth met de functie `imager::isoblur()` om ruis te onderdrukken.
 
-out <- cimg_to_spatraster(out, r = chm_mosaic)
-plot(out)
+(ref:gradmag-proefvlakken) Details van de gradiëntsterktekaart voor de proefvlakken.
 
 
+```{r gradmag, fig.cap = "(ref:gradmag)"}
+gradmag_mosaic <- calc_gradient_magnitude(chm_mosaic,
+                                          blur = TRUE,
+                                          sigma = 2)
+
+plot(gradmag_mosaic)
 ```
 
+
+
+```{r gradmag-proefvlakken, fig.cap = "(ref:gradmag-proefvlakken)"}
+proefvlakken_gradmag <- pb_plot_chm %>%
+  group_by(gebied, code_plot) %>%
+  nest() %>%
+  mutate(
+    plotgm = map(data, function(x){
+      terra::crop(gradmag_mosaic, vect(x), mask = TRUE) %>%
+        st_as_stars()
+      }
+    ),
+    ggplots = pmap(list(code_plot = code_plot,
+                        plotgm = plotgm),
+                   function(code_plot, plotgm) {
+                     ggplot() +
+                       geom_stars(data = plotgm) +
+                       theme_void() +
+                       coord_equal() +
+                       labs(
+                         title = code_plot)
+                   })
+  )
+
+patchwork::wrap_plots(
+  proefvlakken_gradmag$ggplots, ncol = 3, guides = "collect") &
+  scale_fill_viridis_c(
+    breaks = c(0, 0.1, 0.2, 0.3, 0.4, 0.5),
+    limits = c(0, 0.5)
+  )
+```
 
 
 ### Topografische openheid
