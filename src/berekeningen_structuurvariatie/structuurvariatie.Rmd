@@ -409,6 +409,7 @@ table_smith <- data.frame(
 )
 
 table_smith %>%
+  mutate(Description = str_wrap(Description, width = 50)) %>%
   gt::gt(caption = "(ref:geodiv-table)")
 ```
 
@@ -654,7 +655,7 @@ pmap(list(title = aa$code_plot,
 ```
 
 
-### Gradiëntsterkte
+### Gradiëntsterkte of helling
 
 Om beter zicht te krijgen op gradiënten in het terrein (bv grasland overgang naar bos), kunnen we technieken toepassen uit image processing.
 Bijvoorbeeld technieken voor edge detection.
