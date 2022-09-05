@@ -288,15 +288,68 @@ terra::mosaic(
 
 ```{r eval=file.exists(mosaicname)}
 chm_mosaic <- rast(mosaicname)
-plot(chm_mosaic)
+ggplot() +
+  geom_stars(data = st_as_stars(chm_mosaic),
+             downsample = 11) +
+  coord_equal() +
+  scale_fill_viridis_c()
 ```
 
-```{r eval=FALSE}
-differences <-
-  chm_mosaic - terra::resample(Ename_20200831_vh25, chm_mosaic)
-hist(differences)
-plot(abs(differences) > 1)
+```{r}
+diffname <- file.path(get_map_procesbeheer(),
+                       "PB06_Drone_En_Beelden",
+                       "PB_afgeleide_data",
+                       "chm",
+                       paste0("Ename_20200831_CHM_mosaic",
+                              "_res",
+                              "0.25_diff_vh25",
+                              ".tif"))
 ```
+
+
+```{r eval = !file.exists(diffname)}
+differences <-
+  chm_mosaic - terra::project(
+    Ename_20200831_vh25, chm_mosaic)
+
+writeRaster(differences,
+    filename = diffname,
+    wopt = list(gdal = c("COMPRESS=LZW", "TFW=YES")),
+    overwrite = FALSE)
+```
+
+
+Figuur \@ref(fig:verschil-25cm-arcgis) toont dat kleine verschillen in de manier waarop het CHM geaggregeerd beeld op resolutie 25 cm wordt aangemaakt, toch behoorlijke verschillen in hoogte kan veroorzaken.
+De bulk van de absolute verschillen is kleiner dan 1 dm, maar ongeveer 12,6% is groter dan deze waarde.
+Deze grotere afwijkingen zitten vooral in bos en zijn dus relatief gezien klein (Figuur \@ref(fig:log10verschillenkaart)).
+We zien ook grotere verschillen waar kaarten aan elkaar gezet zijn bij overlappende blokken van dronevluchten.
+Dit wijst mogelijk op een andere manier waarop de data van overlappende delen geaggregeerd zijn in ArcGIS versus R.
+In R werd dit gedaan met de functie `terra::mosaic()` en werd het gemiddelde gebruikt in geval van overlap.
+Dit illustreert het belang van altijd dezelfde procedure te gebruiken om de kaarten aan te maken.
+
+(ref:verschil-25cm-arcgis) Absolute verschillen in vegetatiehoogte tussen het geaggregeerd beeld dat aangemaakt werd in ArcGis en het beeld dat aangemaakt werd in R met package `terra`.
+
+```{r verschil-25cm-arcgis, fig.cap="(ref:verschil-25cm-arcgis)"}
+differences <- rast(diffname)
+
+tibble(diff = values(differences, mat = FALSE)) %>%
+  filter(!is.na(diff)) %>%
+  ggplot() +
+  geom_histogram(aes(x = abs(diff))) +
+  scale_x_log10(breaks =  10^(-7:2))
+```
+
+(ref:log10verschillenkaart) Absolute verschillen in log10-schaal op kaart. Waarden kleiner dan -2, -1, 0, 1 komen overeen met subcentimer, subdecimeter, submeter en subdecameter.
+
+```{r log10verschillenkaart, fig.cap="(ref:log10verschillenkaart)"}
+ggplot() +
+  geom_stars(data = st_as_stars(log10(abs(differences))),
+             downsample = 11) +
+  coord_equal() +
+  scale_fill_viridis_b(breaks = c(-2:2)) +
+  labs(fill = "Log10 Absolute verschillen")
+```
+
 
 # Structuurvariatie binnen plots van 6 m diameter
 
