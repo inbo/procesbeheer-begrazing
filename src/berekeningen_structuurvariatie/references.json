@@ -142,5 +142,120 @@
         "title": "Diversity Effects on Canopy Structure Change throughout a Growing Season in Experimental Grassland Communities",
         "type": "article-journal",
         "volume": "14"
+    },
+    {
+        "DOI": "10.1016/j.tree.2018.12.012",
+        "ISSN": "0169-5347",
+        "URL": "https://www.sciencedirect.com/science/article/pii/S0169534718303045",
+        "accessed": {
+            "date-parts": []
+        },
+        "author": [
+            {
+                "family": "Zellweger",
+                "given": "Florian"
+            },
+            {
+                "family": "De Frenne",
+                "given": "Pieter"
+            },
+            {
+                "family": "Lenoir",
+                "given": "Jonathan"
+            },
+            {
+                "family": "Rocchini",
+                "given": "Duccio"
+            },
+            {
+                "family": "Coomes",
+                "given": "David"
+            }
+        ],
+        "container-title": "Trends in Ecology & Evolution",
+        "container-title-short": "Trends in Ecology & Evolution",
+        "id": "zellweger2019",
+        "issue": "4",
+        "issued": {
+            "date-parts": [
+                [
+                    2019,
+                    4,
+                    1
+                ]
+            ]
+        },
+        "key": "GGWLTWB6",
+        "language": "en",
+        "libraryid": "1",
+        "page": "327-341",
+        "providerkey": "2509FBBE-5BB0-44C4-B119-6083A81ED673",
+        "source": "ScienceDirect",
+        "title": "Advances in Microclimate Ecology Arising from Remote Sensing",
+        "type": "article-journal",
+        "volume": "34"
+    },
+    {
+        "DOI": "10.1111/gcb.14415",
+        "ISSN": "1365-2486",
+        "URL": "https://onlinelibrary.wiley.com/doi/abs/10.1111/gcb.14415",
+        "_eprint": "https://onlinelibrary.wiley.com/doi/pdf/10.1111/gcb.14415",
+        "accessed": {
+            "date-parts": []
+        },
+        "author": [
+            {
+                "family": "Jucker",
+                "given": "Tommaso"
+            },
+            {
+                "family": "Hardwick",
+                "given": "Stephen R."
+            },
+            {
+                "family": "Both",
+                "given": "Sabine"
+            },
+            {
+                "family": "Elias",
+                "given": "Dafydd M.O."
+            },
+            {
+                "family": "Ewers",
+                "given": "Robert M."
+            },
+            {
+                "family": "Milodowski",
+                "given": "David T."
+            },
+            {
+                "family": "Swinfield",
+                "given": "Tom"
+            },
+            {
+                "family": "Coomes",
+                "given": "David A."
+            }
+        ],
+        "container-title": "Global Change Biology",
+        "id": "jucker2018",
+        "issue": "11",
+        "issued": {
+            "date-parts": [
+                [
+                    2018
+                ]
+            ]
+        },
+        "key": "WZMP3LQK",
+        "language": "en",
+        "libraryid": "1",
+        "note": "_eprint: https://onlinelibrary.wiley.com/doi/pdf/10.1111/gcb.14415",
+        "page": "5243-5258",
+        "providerkey": "Zotero",
+        "source": "Wiley Online Library",
+        "title": "Canopy structure and topography jointly constrain the microclimate of human-modified tropical landscapes",
+        "type": "article-journal",
+        "volume": "24"
     }
 ]

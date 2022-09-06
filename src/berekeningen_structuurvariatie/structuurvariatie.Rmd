@@ -172,7 +172,6 @@ raster::raster(Ename_20200831_DEM_Blok1) %>%
           maxpixels = 1e6)
 ```
 
-
 ```{r vh25-rtk}
 ggplot() +
   geom_stars(data = st_as_stars(Ename_20200831_vh25),
@@ -183,7 +182,6 @@ ggplot() +
              size = 4) +
   scale_fill_viridis_c()
 ```
-
 
 ## Keuze resolutie en (dis)aggregatiemethoden
 
@@ -306,7 +304,6 @@ diffname <- file.path(get_map_procesbeheer(),
                               ".tif"))
 ```
 
-
 ```{r eval = !file.exists(diffname)}
 differences <-
   chm_mosaic - terra::project(
@@ -317,7 +314,6 @@ writeRaster(differences,
     wopt = list(gdal = c("COMPRESS=LZW", "TFW=YES")),
     overwrite = FALSE)
 ```
-
 
 Figuur \@ref(fig:verschil-25cm-arcgis) toont dat kleine verschillen in de manier waarop het CHM geaggregeerd beeld op resolutie 25 cm wordt aangemaakt, toch behoorlijke verschillen in hoogte kan veroorzaken.
 De bulk van de absolute verschillen is kleiner dan 1 dm, maar ongeveer 12,6% is groter dan deze waarde.
@@ -349,7 +345,6 @@ ggplot() +
   scale_fill_viridis_b(breaks = c(-2:2)) +
   labs(fill = "Log10 Absolute verschillen")
 ```
-
 
 # Structuurvariatie binnen plots van 6 m diameter
 
@@ -600,9 +595,9 @@ Dit wijst op een cyclisch zich herhalend ruimtelijk patroon, zoals je bijvoorbee
 Aan een empirisch variogram kunnen modellen worden gefit die de vorm van de curve parametrisch beschrijven.
 Uit deze parameters kunnen dan metrieken worden berekend die iets zeggen over de manier waarop de hoogtemetingen autocorrelatie vertonen:
 
-- range: de interpuntafstand waarop de semivariantie niet meer substantieel toeneemt
-- sill: de semivariantie bij interpuntafstand gelijk aan de range
-- nugget: de semivariantie bij interpuntafstand 0
+-   range: de interpuntafstand waarop de semivariantie niet meer substantieel toeneemt
+-   sill: de semivariantie bij interpuntafstand gelijk aan de range
+-   nugget: de semivariantie bij interpuntafstand 0
 
 (ref:semivarianceplots) Links: CHM model rond proefvlak met buffer van 3 m en 15 m. Rechts: semivariogram voor vier richtingen. Hoeken 0, 45, 90, 135 komen overeen met respectievelijk N-Z, NO-ZW, O-W, ZO-NW.
 
@@ -654,7 +649,6 @@ pmap(list(title = aa$code_plot,
      })
 ```
 
-
 ### Gradiëntsterkte of helling
 
 Om beter zicht te krijgen op gradiënten in het terrein (bv grasland overgang naar bos), kunnen we technieken toepassen uit image processing.
@@ -663,9 +657,7 @@ Bijvoorbeeld technieken voor edge detection.
 Het idee hier is om in de x-richting en in de y-richting een (benadering) van de eerste afgeleide te berekenen (= gradiënt / helling).
 Vervolgens kunnen deze beide componenten via de Euclidische norm gecombineerd worden tot een gradiëntsterkte (of gradiënt intensiteit):
 
-
 $$|{\nabla f}| = \sqrt{\bigg(\frac{\partial}{\partial x}f\bigg)^2 + \bigg(\frac{\partial}{\partial y}f\bigg)^2}$$
-
 
 Er kan ook een gradiënt richting uit afgeleid worden:
 
@@ -673,12 +665,12 @@ $$\sphericalangle ({\nabla f}) = \text{atan2}(\frac{\partial}{\partial y}f, \fra
 
 Figuur \@ref(fig:gradmag) laat zien dat de sterkste gradiënten zich situeren in de kruinen van de bomen en bij scherpe overgangen van bos of bomenrijen naar grasland.
 
-Figuur \@ref(fig:gradmag-proefvlakken) toont de gradiëntsterkte binnen de proefvlakken. Dus ook in lage vegetaties (< 2m) geeft deze kaart aan waar de overgangen zijn en hoe sterk deze zijn.
+Figuur \@ref(fig:gradmag-proefvlakken) toont de gradiëntsterkte binnen de proefvlakken.
+Dus ook in lage vegetaties (\< 2m) geeft deze kaart aan waar de overgangen zijn en hoe sterk deze zijn.
 
 (ref:gradmag) Gradiëntsterktekaart. De eenheid is [m/m]. Hogere waarden komen overeen met zones waar een sterkere overgang is van laag naar hoog. Vooraf aan de berekening van de gradiëntsterkte werd het CHM model eerst gesmooth met de functie `imager::isoblur()` om ruis te onderdrukken.
 
 (ref:gradmag-proefvlakken) Details van de gradiëntsterktekaart voor de proefvlakken.
-
 
 ```{r gradmag, fig.cap = "(ref:gradmag)"}
 gradmag_mosaic <- calc_gradient_magnitude(chm_mosaic,
@@ -714,7 +706,6 @@ p1 + p2 &
   scale_fill_viridis_c()
 ```
 
-
 ```{r gradmag-proefvlakken, fig.cap = "(ref:gradmag-proefvlakken)"}
 proefvlakken_gradmag <- pb_plot_chm %>%
   group_by(gebied, code_plot) %>%
@@ -745,24 +736,50 @@ patchwork::wrap_plots(
   )
 ```
 
-
 ### Topografische openheid?
 
-TO DO
-
-- hoek ten opzichte van zenith in 8 richtingen
-- cf code voor mas meetnet
-
+-   gemiddelde hoek ten opzichte van zenith in 8 richtingen (vrije kijkrichting) binnen een bepaalde maximale afstand
+-   deze berekende rasterwaarden eventueel verder uitmiddelen of standaarddeviatie op berekenen binnen straal van x m
 
 ### Lacunarity / gap analysis?
 
-gaps => ecologische niches theorie?
+gaps =\> ecologische niches theorie?
 
-https://github.com/STBrinkmann/spatLac
+<https://github.com/STBrinkmann/spatLac>
 
+### Microklimaat gerelateerd?
 
+<https://saga-gis.sourceforge.io/saga_tool_doc/7.2.0/ta_lighting_2.html>
 
+cf @zellweger2019
 
+-   Zonne-instraling met en zonder schaduw van de vegetatie
+
+@jucker2018
+
+Related to microclimate
+
+-   DEM (affecting air temperature and humidity)
+
+    -   elevation
+
+    -   slope
+
+    -   aspect
+
+    -   topographic position index
+
+-   CHM
+
+    -   max canopy height
+
+    -   mean top-of-canopy height
+
+    -   gap fraction at 2m above ground
+
+    -   standard deviation of top-of-canopy height
+
+    -   plant area index (m²/m²)
 
 ## CHM + NDVI?
 
@@ -1016,8 +1033,6 @@ chm_mosaic_fcircle3_skewness <- my_focal(
 
 ```
 
-
-
 De kaarten tonen nu dezelfde info als we berekend hebben voor de structuurvariatie in een proefvlak.
 Elke pixel in de kaart geeft dus de waarde van de standaardafwijking of de scheefheid in een cirkel van 3 meter straal rond deze pixel (de resolutie is 25 cm x 25 cm).
 
@@ -1074,7 +1089,6 @@ localmoranname <- file.path(get_map_procesbeheer(),
                               ".tif"))
 ```
 
-
 ```{r calc-local-moran-map, eval=!file.exists(localmoranname)}
 chm_mosaic_moran <- autocor(chm_mosaic, w = circle3, global = FALSE)
 writeRaster(chm_mosaic_moran, localmoranname)
@@ -1083,7 +1097,6 @@ writeRaster(chm_mosaic_moran, localmoranname)
 ```{r eval = file.exists(localmoranname)}
 chm_mosaic_moran <- rast(localmoranname)
 ```
-
 
 ```{r plot-local-moran-map}
 ggplot() +
@@ -1115,7 +1128,6 @@ names(combined) <- c("moran", "gradmag", "skewness", "sd")
 
 plot(combined)
 ```
-
 
 ## CHM + NDVI
 
