@@ -13,7 +13,8 @@ collar <- collar %>%
     gewogen_aantal_posities =
       aantal_posities_per_biotoop * opp_biotoop / sum(opp_biotoop),
     aandeel_gewogen_aantal_posities =
-      gewogen_aantal_posities / sum(gewogen_aantal_posities)
+      gewogen_aantal_posities / sum(gewogen_aantal_posities),
+    densiteit_posities = aantal_posities_per_biotoop / opp_biotoop
   )
 
 collar %>%
@@ -26,3 +27,10 @@ collar %>%
   geom_col(aes(x = periode, y = aandeel_gewogen_aantal_posities,
                fill = biotoop)) +
   scale_y_continuous(labels = scales::percent)
+
+
+collar %>%
+  ggplot() +
+  geom_line(aes(x = periode, y = densiteit_posities,
+                group = biotoop, colour = biotoop)) +
+  labs(y = "densiteit posities (aantal per hectare)")
