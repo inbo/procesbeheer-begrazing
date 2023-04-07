@@ -2,7 +2,7 @@
 title: "Berekening van structuurvariatie op basis van dronebeelden en orthofoto's"
 author: "Hans Van Calster"
 date: "`r Sys.Date()`"
-output: bookdown::pdf_document2
+output: bookdown::html_document2
 bibliography: references.json
 editor_options: 
   markdown: 
@@ -746,6 +746,10 @@ patchwork::wrap_plots(
 gaps =\> ecologische niches theorie?
 
 <https://github.com/STBrinkmann/spatLac>
+
+<!--Kan dit dienen om de "korrel" van de vegetatiestructuur te beschrijven?
+bv heidestruiken bulten ongeveer 30cm
+-->
 
 ### Microklimaat gerelateerd?
 
