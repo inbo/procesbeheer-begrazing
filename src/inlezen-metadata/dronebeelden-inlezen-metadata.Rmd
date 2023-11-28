@@ -7,6 +7,10 @@ output: bookdown::html_document2
 
 ```{r setup, include=FALSE}
 install.packages("geodiv")
+install.packages("n2khab")
+install.packages("rasterVis")
+install.packages("ggmap")
+
 library(knitr)
 opts_chunk$set(echo = TRUE)
 
@@ -19,9 +23,12 @@ library(xml2)
 library(dplyr)
 library(sf)
 library(geodiv)
+library(n2khab)
+library(rasterVis)
 library(mapview)
 options(rgl.useNULL = TRUE)
 library(rgl)
+library(ggmap)
 
 source(find_root_file("src/utils/utils.R", criterion = is_git_root))
 source(find_root_file("src/utils/geocomputations.R", criterion = is_git_root))
@@ -52,7 +59,6 @@ steekproefgrootte <- data.frame(
 steekproefgrootte %>%
   kable()
 ```
-
 Zijn de vermelde steekproefgroottes in de tabel per gebied of per systeem?
 Voor voedselrijke systemen zijn er twee gebieden geselecteerd: Ename en Demerbroeken.
 
@@ -81,7 +87,7 @@ all_tif_files <- fs::dir_ls(file.path(map_procesbeheer,
                             glob = "*.tif")
 all_ndvi_tif_files <- fs::dir_ls(file.path(map_procesbeheer, 
                                       "PB06_Drone_En_Beelden",
-                                      "PB_NDVI"), 
+                                      "PB_afgeleide_data","ndvi"), 
                             recurse = TRUE, 
                             glob = "*.tif")
 
@@ -124,12 +130,12 @@ In de map PB_NDVI zitten NDVI beelden voor elk van de gebieden.
 Kan blijkbaar niet afgeleid worden van de dronebeelden omdat er geen NIR band is.
 
 ```{r ndvi-ename}
-NDVI_18_Ename
-cat(crs(NDVI_18_Ename))
+X20200831_0179202_Ename1_NDVI
+cat(crs(X20200831_0179202_Ename1_NDVI))
 ```
 
 ```{r plot-ndvi-voorbeeld}
-plot(NDVI_18_Ename)
+plot(X20200831_0179202_Ename1_NDVI)
 ```
 
 
