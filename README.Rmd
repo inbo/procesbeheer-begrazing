@@ -64,7 +64,7 @@ Welke dit zijn staat in [het .gitignore bestand](.gitignore).
 ## handboek Github
 https://happygitwithr.com/push-pull-github
 
-##sheetcheat
+## Cheatsheet
 https://ndpsoftware.com/git-cheatsheet.html#loc=index;
 
 
