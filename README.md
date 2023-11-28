@@ -64,6 +64,10 @@ Sommige bestanden, bestandstypes en mappen worden niet getraceerd door
 het git controlesysteem. Welke dit zijn staat in [het .gitignore
 bestand](.gitignore).
 
-\##handboek Github <https://happygitwithr.com/push-pull-github>
+## handboek Github
 
-\##sheetcheat <https://ndpsoftware.com/git-cheatsheet.html#loc=index>;
+<https://happygitwithr.com/push-pull-github>
+
+## Cheatsheet
+
+<https://ndpsoftware.com/git-cheatsheet.html#loc=index>;
