@@ -10,29 +10,26 @@ gestuurde mozaïeklandschappen
 ## Structuur van de repository
 
     #> .
-    #> +-- data
-    #> +-- dronebeelden
-    #> +-- gitignore
-    #> +-- n2khab_data
-    #> |   +-- 10_raw
-    #> |   \-- 20_processed
-    #> \-- src
-    #>     +-- inlezen-metadata
-    #>     +-- utils
-    #>     \-- validatie
+    #> ├── data
+    #> └── src
+    #>     ├── berekeningen_structuurvariatie
+    #>     ├── collardata
+    #>     ├── inlezen-metadata
+    #>     ├── utils
+    #>     └── validatie
 
 ## De repository lokaal installeren
 
-  - ga naar [de
-    repository](https://github.com/inbo/procesbeheer-begrazing/) en klik
-    op Code en kopieer vervolgens de link naar het klembord
-  - start RStudio en selecteer `File -> New project -> Version Control
-    -> Git` -\> paste the URL
-  - `procesbeheer-begrazing` zal automatisch gesuggereerd worden als
-    project foldernaam
-  - In het veld `Create project as subdirectory of` selecteer een map op
-    je lokale harde schijf. Bijvoorbeeld `C:/R/GitRepositories`.
-  - klik OK
+- ga naar [de
+  repository](https://github.com/inbo/procesbeheer-begrazing/) en klik
+  op Code en kopieer vervolgens de link naar het klembord
+- start RStudio en selecteer
+  `File -> New project -> Version Control -> Git` -\> paste the URL
+- `procesbeheer-begrazing` zal automatisch gesuggereerd worden als
+  project foldernaam
+- In het veld `Create project as subdirectory of` selecteer een map op
+  je lokale harde schijf. Bijvoorbeeld `C:/R/GitRepositories`.
+- klik OK
 
 Je hebt nu een lokale kloon van de remote repository beschikbaar als een
 RStudio project. Dezelfde mappen en bestanden die je kan zien op de
@@ -66,3 +63,7 @@ locatie ingelezen worden in R.
 Sommige bestanden, bestandstypes en mappen worden niet getraceerd door
 het git controlesysteem. Welke dit zijn staat in [het .gitignore
 bestand](.gitignore).
+
+\##handboek Github <https://happygitwithr.com/push-pull-github>
+
+\##sheetcheat <https://ndpsoftware.com/git-cheatsheet.html#loc=index>;
