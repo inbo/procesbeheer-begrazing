@@ -1,0 +1,1148 @@
+---
+title: "Berekening van structuurvariatie op basis van dronebeelden en orthofoto's"
+author: "Hans Van Calster"
+date: "`r Sys.Date()`"
+output: bookdown::html_document2
+bibliography: references.json
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+opts_chunk$set(echo = FALSE,
+               warning = FALSE,
+               message = FALSE)
+
+
+library(terra)
+library(rprojroot)
+library(tidyverse)
+library(fs)
+library(httr)
+library(xml2)
+library(dplyr)
+library(sf)
+library(geodiv)
+library(mapview)
+library(readxl)
+library(stars)
+library(patchwork)
+
+source(find_root_file("src/utils/utils.R", criterion = is_git_root))
+source(find_root_file("src/utils/geocomputations.R", criterion = is_git_root))
+source(find_root_file("src/utils/wfs_wcs.R", criterion = is_git_root))
+
+```
+
+# Doelstellingen
+
+-   Metrieken ontwikkelen voor structuurvariatie (ongeveer) op plotniveau (diameter 6 m).
+-   Toe te passen op de plots (respons = fauna/flora) en op gebiedsniveau (relatie met begrazing): toch twee verschillende dingen
+    -   plotniveau: maat voor variatie in structuur binnen de plot
+        -   obv CHM
+        -   obv combinatie CHM en NDVI
+    -   gebiedsniveau: een kaart die de structuur weergeeft
+-   Welke resolutie ??? Intuitief tussen 5 en 25 cm
+    -   bij aggregatie opties van aggregeren bekijken (gemiddelde, low pass filter, high pass filter, ...)
+-   CHM produceren: dtm wordt geïnterpoleerd
+    -   dtm heeft resolutie 1m en moet op zelfde resolutie als CHM worden gebracht
+-   Foutenanalyse op dtm op basis van rtk metingen van subplots !! (27 dtm pixels t.o.v. 5 manuele metingen)
+    -   RTK metingen zitten in file geodatabank layer pb_subplot_center
+    -   De vraag is hier of de RTK metingen systematisch verschillen van de DTM en indien ja of we de DTM metingen kunnen corrigeren hiermee
+-   Als studiegebied in eerste instantie Ename !
+    -   dronevluchtblokken binnen de studiegebieden zijn praktisch gekozen eenheden die de bedoeling hebben om een representatief beeld te hebben van de verschillen in structuurvariatie in het gebied
+    -   De naamgeving van de drone-beelden van Ename is definitief aangepast: zie "/Procesbeheer/PB06_Drone_En_Beelden/PB_Drone_Data/Voedselrijk_Ename/Ename20200831"
+    -   vh25 slaat op "vegetatiehoogte op een resolutie van 25 cm" (chm - dtm vlaanderen) en is dus een gemerged beeld van het hele gebied.
+
+```{r inlezen-ename-rasters, warning=FALSE}
+map_procesbeheer <- get_map_procesbeheer()
+all_tif_files <- fs::dir_ls(file.path(map_procesbeheer, 
+                                      "PB06_Drone_En_Beelden",
+                                      "PB_Drone_Data",
+                                      "Voedselrijk_Ename",
+                                      "Ename20200831"), 
+                            recurse = TRUE, 
+                            glob = "*.tif")
+all_ndvi_tif_files <- fs::dir_ls(file.path(map_procesbeheer, 
+                                      "PB06_Drone_En_Beelden",
+                                      "PB_NDVI"), 
+                            recurse = TRUE, 
+                            glob = "*.tif")
+
+all_jpg_files <- fs::dir_ls(file.path(map_procesbeheer, 
+                                      "PB06_Drone_En_Beelden",
+                                      "PB_Drone_Data",
+                                      "Voedselrijk_Ename",
+                                      "Ename20200831"), 
+                            recurse = TRUE, 
+                            glob = "*.jpg")
+
+walk(all_tif_files, load_rasterfiles)
+walk(all_ndvi_tif_files[grepl("Ename", all_ndvi_tif_files)],
+     load_rasterfiles)
+walk(all_jpg_files, load_rasterfiles)
+```
+
+```{r inlezen-geodatabank}
+gdb_file <- file.path(
+  "Z:/Projects/PRJ_Procesbeheer/PBGIS05_Steekproef",
+  "Procesbeheer_Design.gdb")
+
+#file.exists(gdb_file)
+#st_layers(gdb_file)
+
+pb_plot <- read_sf(gdb_file, layer = "PB_Plot") %>%
+  filter(Gebied == "Ename") %>%
+  janitor::clean_names()
+
+# de defaultwaarde voor TAW is ingesteld op 0 (bad practice!)
+pb_subplot_center <- read_sf(gdb_file, layer = "PB_Subplot_Center") %>%
+  janitor::clean_names() %>%
+  filter(gebied == "Ename",
+         taw > 0) %>%
+  rename(x = x_lambert_cntr,
+         y = y_lambert_cntr)
+pb_gebied <- read_sf(gdb_file, layer = "PB_Gebied") %>%
+  filter(Naam == "Ename") %>%
+  janitor::clean_names()
+pb_onderzoeksgebied <- read_sf(gdb_file, layer = "PB_Onderzoeksgebied") %>%
+  filter(Gebied == "Ename") %>%
+  janitor::clean_names()
+```
+
+# Berekening canopy height model (CHM)
+
+## Digitaal terreinmodel (DTM) versus RTK hoogtemetingen
+
+```{r rtk-plots-ename}
+pb_subplot_center %>%
+  ggplot() +
+  geom_point(aes(x = x, y = y, size = taw)) +
+  facet_wrap(~code_plot, scales = "free", labeller = label_both)
+```
+
+```{r wcs-dhm-ename}
+# voorbeeldje
+bbox_vec <- pb_subplot_center %>%
+  st_buffer(dist = 100) %>%
+  ext() %>%
+  floor() %>%
+  as.vector()
+
+dtm_extent_rtk <- get_coverage_wcs(
+  wcs = "dtm", 
+  bbox = bbox_vec,
+  layername = "EL.GridCoverage.DTM", 
+  resolution = 1)
+
+#all.equal(crs(dtm1m), crs(X20200831_0179202_Ename1_DEM))
+```
+
+Bepaling TAW op basis van DTM.
+
+```{r}
+taw_dtm <- terra::extract(dtm_extent_rtk,
+               vect(pb_subplot_center),
+               method = "simple") %>%
+  as_tibble()
+colnames(taw_dtm) <- c("id", "taw_dtm")
+
+rtk_ename_dtm <- pb_subplot_center %>%
+  bind_cols(taw_dtm %>%
+              select(taw_dtm)) %>%
+  mutate(taw_verschil = taw - taw_dtm)
+
+rtk_ename_dtm %>%
+  ggplot(aes(x = code_plot, y = taw_verschil)) +
+  geom_hline(yintercept = 0) +
+  geom_point(alpha = 0.3) +
+  stat_summary(fun.data = mean_cl_boot, colour = "orange") +
+  labs(y = "Verschil in meter t.o.v. DTM")
+```
+
+```{r eval=FALSE}
+raster::raster(dtm_extent_rtk) %>%
+  mapview(alpha = 0.3,
+          maxpixels = 1e6)
+
+raster::raster(Ename_20200831_DEM_Blok1) %>%
+  mapview(alpha = 0.3,
+          maxpixels = 1e6)
+```
+
+```{r vh25-rtk}
+ggplot() +
+  geom_stars(data = st_as_stars(Ename_20200831_vh25),
+             downsample = 11) +
+  coord_equal() +
+  geom_point(data = pb_subplot_center,
+             aes(x = x, y = y, colour = code_plot),
+             size = 4) +
+  scale_fill_viridis_c()
+```
+
+## Keuze resolutie en (dis)aggregatiemethoden
+
+Probleem:
+
+-   DSM dronebeelden hebben hoge resolutie met resolutie 0.025 m x 0.025 m
+-   DTM raster heeft een resolutie van 1 m x 1 m
+
+Het canopy height model wordt berekend door verschil te berekenen tussen het DSM en DTM.
+Om deze berekening te kunnen doen moeten beide rasters op eenzelfde rastergrid geplaatst worden (zelfde oorsprong, oriëntatie en resolutie).
+
+Vanuit theorie over foutenpropagatie zou je voor de berekening van dit verschil, de resolutie moeten overnemen van het minst nauwkeurige raster.
+Indien je dat niet doet, introduceer je schijnnauwkeurigheid door het minder nauwkeurige raster voor te stellen op een fijnere resolutie.
+Voor maaiveldhoogte is het risico op introductie van grote fouten hierop echter erg laag.
+De maaiveldhoogte wijzigt meestal niet veel op afstanden minder dan 1 meter.
+Bovendien kan er bij de disaggregatie eventueel gekozen worden voor bilineaire interpolatie zodat de geïnterpoleerde waarden een gemiddelde is van een lineaire regressie van de oorspronkelijke celwaarden in de x- en in de y-richting.
+
+Vanuit ecologisch perspectief zijn we geïnteresseerd in structuurvariatie ten gevolge van hoogteverschillen in het vegetatiedek ten opzichte van het maaiveld.
+Hiervoor is een resolutie nodig die fijn genoeg is om deze patronen realistisch te weerspiegelen en deze resolutie zit waarschijnlijk ergens tussen deze van het DSM en deze van het DTM.
+Er zal dus een aggregatie nodig zijn van het DSM en een disaggregatie van het DTM.
+We stellen de gewenste resolutie in op verschillende waarden en gaan na vanaf wanneer de relatie met de RTK hoogtemetingen te sterk uitgemiddeld wordt.
+
+```{r}
+chm_res <- c(0.1, 0.25, 0.5, 1)
+
+chm_b1 <- map(chm_res,
+              function(x) {
+                calc_chm(dsm = Ename_20200831_DEM_Blok1,
+                        chm_resolution = x,
+                        dtm_resolution = 1)
+              })
+
+chm_b2 <- map(chm_res,
+              function(x) {
+                calc_chm(dsm = Ename_20200831_DEM_Blok2,
+                        chm_resolution = x,
+                        dtm_resolution = 1)
+              })
+
+chm_b3 <- map(chm_res,
+              function(x) {
+                calc_chm(dsm = Ename_20200831_DEM_Blok3,
+                        chm_resolution = x,
+                        dtm_resolution = 1)
+              })
+
+chm_b4 <- map(chm_res,
+              function(x) {
+                calc_chm(dsm = Ename_20200831_DEM_Blok4,
+                        chm_resolution = x,
+                        dtm_resolution = 1)
+              })
+
+chm_b5 <- map(chm_res,
+              function(x) {
+                calc_chm(dsm = Ename_20200831_DEM_Blok5,
+                        chm_resolution = x,
+                        dtm_resolution = 1)
+              })
+
+chm_b6 <- map(chm_res,
+              function(x) {
+                calc_chm(dsm = Ename_20200831_DEM_Blok6,
+                        chm_resolution = x,
+                        dtm_resolution = 1)
+              })
+```
+
+(TO DO wanneer de RTK + controle hoogtemetingen beschikbaar zijn)
+
+## Berekening CHM en overlappende blokken
+
+Dit kan met `terra::merge` of `terra::mosaic`.
+In het eerste geval wordt bij overlap tussen verschillende rasters voorrang gegeven aan de eerste raster, dan de tweede, ... die wordt doorgegeven aan de functie.
+De functie `terra::mosaic` zal daarentegen een gemiddelde (of andere aggregatiefunctie) nemen bij overlappende delen.
+
+```{r}
+mosaicname <- file.path(get_map_procesbeheer(),
+                       "PB06_Drone_En_Beelden",
+                       "PB_afgeleide_data",
+                       "chm",
+                       paste0("Ename_20200831_CHM_mosaic",
+                              "_res",
+                              "0.25",
+                              ".tif"))
+
+```
+
+```{r mosaic-res0.25, eval=!file.exists(mosaicname)}
+terra::mosaic(
+  chm_b1[[2]],
+  chm_b2[[2]],
+  chm_b3[[2]],
+  chm_b4[[2]],
+  chm_b5[[2]],
+  chm_b6[[2]],
+  filename = mosaicname,
+  wopt = list(gdal = c("COMPRESS=LZW", "TFW=YES")),
+  overwrite = FALSE
+  )
+```
+
+```{r eval=file.exists(mosaicname)}
+chm_mosaic <- rast(mosaicname)
+ggplot() +
+  geom_stars(data = st_as_stars(chm_mosaic),
+             downsample = 11) +
+  coord_equal() +
+  scale_fill_viridis_c()
+```
+
+```{r}
+diffname <- file.path(get_map_procesbeheer(),
+                       "PB06_Drone_En_Beelden",
+                       "PB_afgeleide_data",
+                       "chm",
+                       paste0("Ename_20200831_CHM_mosaic",
+                              "_res",
+                              "0.25_diff_vh25",
+                              ".tif"))
+```
+
+```{r eval = !file.exists(diffname)}
+differences <-
+  chm_mosaic - terra::project(
+    Ename_20200831_vh25, chm_mosaic)
+
+writeRaster(differences,
+    filename = diffname,
+    wopt = list(gdal = c("COMPRESS=LZW", "TFW=YES")),
+    overwrite = FALSE)
+```
+
+Figuur \@ref(fig:verschil-25cm-arcgis) toont dat kleine verschillen in de manier waarop het CHM geaggregeerd beeld op resolutie 25 cm wordt aangemaakt, toch behoorlijke verschillen in hoogte kan veroorzaken.
+De bulk van de absolute verschillen is kleiner dan 1 dm, maar ongeveer 12,6% is groter dan deze waarde.
+Deze grotere afwijkingen zitten vooral in bos en zijn dus relatief gezien klein (Figuur \@ref(fig:log10verschillenkaart)).
+We zien ook grotere verschillen waar kaarten aan elkaar gezet zijn bij overlappende blokken van dronevluchten.
+Dit wijst mogelijk op een andere manier waarop de data van overlappende delen geaggregeerd zijn in ArcGIS versus R.
+In R werd dit gedaan met de functie `terra::mosaic()` en werd het gemiddelde gebruikt in geval van overlap.
+Dit illustreert het belang van altijd dezelfde procedure te gebruiken om de kaarten aan te maken.
+
+(ref:verschil-25cm-arcgis) Absolute verschillen in vegetatiehoogte tussen het geaggregeerd beeld dat aangemaakt werd in ArcGis en het beeld dat aangemaakt werd in R met package `terra`.
+
+```{r verschil-25cm-arcgis, fig.cap="(ref:verschil-25cm-arcgis)"}
+differences <- rast(diffname)
+
+tibble(diff = values(differences, mat = FALSE)) %>%
+  filter(!is.na(diff)) %>%
+  ggplot() +
+  geom_histogram(aes(x = abs(diff))) +
+  scale_x_log10(breaks =  10^(-7:2))
+```
+
+(ref:log10verschillenkaart) Absolute verschillen in log10-schaal op kaart. Waarden kleiner dan -2, -1, 0, 1 komen overeen met subcentimer, subdecimeter, submeter en subdecameter.
+
+```{r log10verschillenkaart, fig.cap="(ref:log10verschillenkaart)"}
+ggplot() +
+  geom_stars(data = st_as_stars(log10(abs(differences))),
+             downsample = 11) +
+  coord_equal() +
+  scale_fill_viridis_b(breaks = c(-2:2)) +
+  labs(fill = "Log10 Absolute verschillen")
+```
+
+# Structuurvariatie binnen plots van 6 m diameter
+
+-   plotniveau: maat voor variatie in structuur binnen de plot
+    -   obv CHM
+    -   obv combinatie CHM en NDVI
+
+In @smith2021 staat een tabel met mogelijke metrieken voor structuurvariatie.
+Veel van deze metrieken reflecteren min of meer hetzelfde en ze zijn dan ook onderling vaak sterk gecorreleerd.
+
+@smith2021 deelt de verschillende metrieken in in vier categorieën:
+
+-   roughness
+-   distribution
+-   radial
+-   angular
+
+De categorie "roughness" omvat metrieken die de "ruwheid" van het landschap weergeven.
+Hier valt dan ook bijvoorbeeld de welgekende standaardafwijking onder.
+
+De categorie "distribution" vertelt iets over de manier waarop de waarden (in ons geval hoogtemetingen) verdeeld zijn.
+Hier valt bijvoorbeeld een maat voor scheefheid (skewness) onder.
+
+De andere twee categorieën omvatten metrieken die iets zeggen over de (dominante) richting (Noord, Zuid, ...) waar een fenomeen zich voordoet.
+
+Vooral "roughness" en "distribution" zijn relevant voor de karakterisatie van structuurvariatie op plotniveau.
+We raden daarom aan om de statistisch welgekende metrieken te nemen, zijnde de standaardeviatie en de Fisher-Pearson coëfficiënt voor scheefheid om deze twee dimensies van structuurvariatie te vatten.
+
+We raden aan om niet de namen hiervoor te gebruiken die @smith2021 hieraan toekennen (respectievelijk "root mean square roughness" en "surface skewness"), maar gewoon de naam te gebruiken waaronder ze in de statistiek gekend zijn.
+Het is dan voor een lezer veel duidelijker wat er berekend wordt.
+
+(ref:geodiv-table) Selectie uit metrieken van het `geodiv` R package [@smith2021]
+
+```{r geodiv-table}
+table_smith <- data.frame(
+  stringsAsFactors = FALSE,
+            Metric = c("Average roughness",
+                       "Root mean square roughness","Ten-point height",
+                       "Root mean square slope","Area root mean square slope",
+                       "Surface area ratio","Surface bearing index", "Surface skewness", "Fractal dimension",
+                       "Dominant texture direction","Texture direction index"),
+     Function.name = c("Sa","Sq","S10z","Sdq",
+                       "Sdq6","Sdr","Sbi", "Ssk", "Sfd","Std","Stdi"),
+       Description = c("Absolute deviation of values from the mean value",
+                       "Standard deviation of surface values relative to the mean value",
+                       "Average height above the mean surface for the five highest local maxima plus the average height below the mean surface for the five lowest local minima",
+                       "Root mean square slope using the two-point method",
+                       "Root mean square slope using the seven-point method","Ratio of a flat surface to the actual surface",
+                       "Ratio of root mean square roughness (Sq) to height at 5% of the bearing area curve",
+                       "FisherPearson coefficient of skewness (asymmetry of the surface height distribution)",
+                       "3D fractal dimension, calculated using the triangular prism surface area method.",
+                       "Angle of dominating texture as found from the Fourier spectrum image","Relative dominance of Std"),
+          Category = c("Roughness","Roughness",
+                       "Roughness","Roughness","Roughness","Roughness",
+                       "Distribution", "Distribution",
+                       "Radial","Angular","Angular")
+)
+
+table_smith %>%
+  mutate(Description = str_wrap(Description, width = 50)) %>%
+  gt::gt(caption = "(ref:geodiv-table)")
+```
+
+Naast de keuze tussen metrieken is ook een keuze nodig wat te doen met eventuele grootschalige trends die in de kaart aanwezig zijn.
+Indien deze grootschalige trends op zich niet interessant zijn, kan er een detrending gedaan worden alvorens de metrieken te berekenen (op de afwijkingen ten opzichte van de grootschalige trends).
+
+Voor de CHM modellen is "detrending" vermoedelijk niet nodig.
+Trends in maaiveldhoogte zijn immers al verwijderd doordat CHM = DSM - DTM.
+
+## CHM
+
+```{r skewness-functie}
+ssk <- function(x, ...) {
+  xbar <- mean(x, ...)
+  s <- sd(x, ...)
+  N <- length(na.omit(x))
+
+  val_unadj <- (sum((x - xbar) ^ 3, ...) / N) / (s ^ 3)
+
+  val <- (sqrt((N * (N - 1))) / (N - 2)) * val_unadj # adjusted Fisher-Pearson coefficient of skewness
+  return(val)
+}
+
+ssk_extract <- function(value, coverage_fraction, ...) {
+  xbar <- weighted.mean(x = value, w = coverage_fraction, ...)
+  s <- sqrt(Hmisc::wtd.var(x = value, weights = coverage_fraction, ...))
+  N <- length(na.omit(value))
+
+  val_unadj <- (sum((value * coverage_fraction - xbar) ^ 3, ...) / N) /
+    (s ^ 3)
+
+  val <- (sqrt((N * (N - 1))) / (N - 2)) * val_unadj # adjusted Fisher-Pearson coefficient of skewness
+  return(val)
+}
+
+```
+
+```{r summarystats-chm-plot}
+out <- exactextractr::exact_extract(
+  chm_mosaic,
+  pb_plot,
+  fun = c("mean", "stdev", "coefficient_of_variation",
+          "min", "quantile", "max"),
+  quantiles = c(0.25, 0.75)
+)
+
+ssk_out <- exactextractr::exact_extract(
+  chm_mosaic,
+  pb_plot,
+  fun = ssk_extract,
+  na.rm = TRUE
+)
+
+pb_plot_chm <- pb_plot %>%
+  bind_cols(out) %>%
+  bind_cols(data.frame(ssk = ssk_out))
+```
+
+Figuur \@ref(fig:mean-sd) toont de relatie van enkele metrieken die structuurvariatie weergeven tot de gemiddelde vegetatiehoogte in 10 proefvlakken.
+
+(ref:mean-sd) Relaties tussen standaarddeviatie, de variatiecoëfficiënt en scheefheid met de gemiddelde vegetatiehoogte in 10 proefvlakken.
+
+```{r mean-sd, fig.cap="(ref:mean-sd)"}
+msd <- pb_plot_chm %>%
+  ggplot() +
+  geom_point(aes(x = mean, y = stdev))
+mcv <- pb_plot_chm %>%
+  ggplot() +
+  geom_point(aes(x = mean, y = coefficient_of_variation))
+mssk <- pb_plot_chm %>%
+  ggplot() +
+  geom_point(aes(x = mean, y = ssk)) +
+  labs(y = "skewness")
+
+msd + mcv + mssk + patchwork::plot_layout(ncol = 2)
+```
+
+Standaarddeviatie = goede maat voor absolute variabiliteit in vegetatiehoogte in een proefvlak (maat voor de spreiding van vegetatiehoogtemetingen)
+
+CV = goede maat voor verschillen in variabiliteit tussen proefvlakken
+
+Scheefheid =
+
+-   0: geen scheve verdeling (symmetrische verdeling).
+
+-   \< 0: negatieve scheefheid (piek zit rechts van het gemiddelde).
+
+-   
+
+    > 0: positieve scheefheid (piek zit links van het gemiddelde).
+
+Figuur \@ref(fig:visualisatie-proefvlakken) laat toe om de verschillende metrieken en een kaart van de vegetatiehoogte binnen elk proefvlak onderling te vergelijken.
+
+(ref:visualisatie-proefvlakken) Vegetatiehoogteverschillen binnen de proefvlakken in Ename. Boven elk proefvlak staan de ermee overeenkomende metrieken die bepaalde aspecten van structuurvariatie weergeven.
+
+```{r visualisatie-proefvlakken, fig.height = 220/25.4, fig.cap="(ref:visualisatie-proefvlakken)"}
+proefvlakken <- pb_plot_chm %>%
+  group_by(gebied, code_plot, nr, start_staal, mean, stdev, 
+           coefficient_of_variation, min, q25, q75, max, ssk) %>%
+  nest() %>%
+  mutate(
+    plotchm = map(data, function(x){
+      terra::crop(chm_mosaic, vect(x), mask = TRUE) %>%
+        st_as_stars()
+      }
+    ),
+    ggplots = pmap(list(code_plot = code_plot,
+                        mean = mean,
+                        stdev = stdev,
+                        cv = coefficient_of_variation,
+                        ssk = ssk,
+                        plotchm = plotchm),
+                   function(code_plot, mean, stdev, cv, ssk, plotchm) {
+                     ggplot() +
+                       geom_stars(data = plotchm) +
+                       theme_void() +
+                       coord_equal() +
+                       labs(
+                         title = code_plot,
+                         subtitle = sprintf(
+                           "mean = %.2f,\nstdev = %.2f,\ncv = %.2f,\nssk = %.2f",
+                           mean,
+                           stdev,
+                           cv,
+                           ssk))
+                   })
+    
+  )
+
+
+patchwork::wrap_plots(
+  proefvlakken$ggplots, ncol = 3, guides = "collect") &
+  scale_fill_viridis_c(
+    breaks = c(0, 0.2, 0.5, 1, 1.5, 2),
+    limits = c(-0.2, 2)
+  )
+```
+
+Figuur \@ref(fig:ecdf-pdf) geeft aan dat in plaats van te werken met één of meerdere statistische maten, we ook grafisch kunnen werken om verschillen in structuurvariatie te begrijpen.
+De verschillen in vorm van de cumulatieve distributie curves, die hier berekend werd voor vegetatiehoogte gedeeld door de maximale vegetatiehoogte in een proefvlak, vertellen ook iets over de verdeling.
+Concave curves die snel stijgen en dan afvlakken zijn typisch voor proefvlakken met vooral (relatief) lage vegetatie met weinig hoge vegetatie.
+Een voorbeeld hiervan is "venp_04".
+Voor convexe curves die traag stijgen geldt het omgekeerde (bijvoorbeeld "venp_08").
+Curves met eerst een convex en dan een concaaf deel, komen dan weer overeen met proefvlakken waarbij de vegetatiehoogte redelijk symmetrisch verdeeld is rond een gemiddelde (bijvoorbeeld "venp_01").
+
+(ref:ecdf-pdf) (a) densitietsplot van de vegetatiehoogtemetingen; (b) overeenkomstige empirische cumulatieve distributiefunctie van de relatieve vegetatiehoogtes, waarbij deze relatief gemaakt zijn door te delen door de maximale hoogte in een proefvlak.
+
+```{r ecdf-pdf, fig.cap = "(ref:ecdf-pdf)"}
+values <- exactextractr::exact_extract(
+  chm_mosaic,
+  pb_plot,
+  include_cols = "code_plot",
+  include_area = TRUE) %>%
+  bind_rows() %>%
+  as_tibble()
+
+ecdf <- values %>%
+  mutate(value = ifelse(value < 0, 0, value)) %>%
+  group_by(code_plot) %>%
+  mutate(rel_value = value / max(value, na.rm = TRUE)) %>%
+  ggplot() +
+  stat_ecdf(aes(x = rel_value, colour = code_plot, linetype = code_plot)) +
+  labs(x = "Relatieve vegetatiehoogte (m)",
+       y = "Proportie metingen kleiner dan vegetatiehoogte")
+
+kde <- values %>%
+  mutate(value = ifelse(value < 0, 0, value)) %>%
+  ggplot() +
+  geom_density(aes(x = value, colour = code_plot, linetype = code_plot)) +
+  labs(x = "Vegetatiehoogte (m)",
+       y = "Densiteit aan metingen") +
+  theme(legend.position = "none")
+
+kde + ecdf + patchwork::plot_layout(guides = "collect") +
+  patchwork::plot_annotation(tag_levels = "a")
+```
+
+### Metrieken gebaseerd op ruimtelijke autocorrelatie
+
+We kunnen een variogram berekenen om ruimtelijke autocorrelatie in beeld te brengen.
+We berekenen dit op het CHM in een buffer van 15 m rond elk van de proefvlakcentrums.
+Een variogram toont hoe de variantie toeneemt (uitzonderlijk kan het ook afnemen) bij toenemende interpuntafstanden.
+Dit kan in verschillende richtingen worden berekend, zodat bijvoorbeeld gedetecteerd kan worden of er verschillen zijn ten gevolge van een structuur in het landschap (bv bosrand).
+Zie figuur \@ref(fig:semivarianceplots).
+Voor proefvlak "venp_01" zien we een toename gevolgd door een afname vooral in de N-Z richting.
+Dit wijst op een cyclisch zich herhalend ruimtelijk patroon, zoals je bijvoorbeeld zou hebben bij een rabattenstructuur.
+
+Aan een empirisch variogram kunnen modellen worden gefit die de vorm van de curve parametrisch beschrijven.
+Uit deze parameters kunnen dan metrieken worden berekend die iets zeggen over de manier waarop de hoogtemetingen autocorrelatie vertonen:
+
+-   range: de interpuntafstand waarop de semivariantie niet meer substantieel toeneemt
+-   sill: de semivariantie bij interpuntafstand gelijk aan de range
+-   nugget: de semivariantie bij interpuntafstand 0
+
+(ref:semivarianceplots) Links: CHM model rond proefvlak met buffer van 3 m en 15 m. Rechts: semivariogram voor vier richtingen. Hoeken 0, 45, 90, 135 komen overeen met respectievelijk N-Z, NO-ZW, O-W, ZO-NW.
+
+```{r semivarianceplots, fig.cap="(ref:semivarianceplots)", out.width="100%"}
+aa <- pb_plot_chm %>%
+  filter(!code_plot %in% c("venp_11", "venp_12")) %>%
+  st_buffer(dist = 15) %>%
+  group_by(code_plot) %>%
+  nest() %>%
+  mutate(rast_b15 = map(data, ~terra::crop(chm_mosaic, .x, mask = TRUE)),
+         sf_b15 = map(rast_b15, function(x) {
+           out <- stars::st_as_stars(x) %>% st_as_sf()
+         }),
+         evg = map(sf_b15, function(x) {
+           gstat::variogram(values ~ 1,
+                           data = x,
+                           cutoff = 10,
+                           width = 0.5,
+                           alpha = c(0,45,90,135))
+         }))
+
+
+pmap(list(title = aa$code_plot,
+          plotpoly = aa$data,
+          rr = aa$rast_b15,
+          evg = aa$evg),
+     function(title = title, plotpoly = plotpoly,
+              rr = rr, evg = evg) {
+       rs <- rr %>%
+         st_as_stars()
+       p1 <- ggplot() + 
+         geom_stars(data = rs) +
+         geom_sf(data = plotpoly, alpha = 0,
+                 colour = "yellow1") +
+         geom_sf(data = plotpoly %>%
+                   st_buffer(dist = 3 - 15),
+                 alpha = 0,
+                 colour = "yellow1") +
+         theme_void()
+       p2 <- evg %>%
+         ggplot() + 
+         geom_point(aes(x = dist,
+                        y = gamma,
+                        colour = factor(dir.hor))) +
+         labs(colour = "hoek",
+              x = "afstand (m)",
+              y = "semivariantie (m²)")
+       p1 + p2 + plot_annotation(title = title)
+     })
+```
+
+### Gradiëntsterkte of helling
+
+Om beter zicht te krijgen op gradiënten in het terrein (bv grasland overgang naar bos), kunnen we technieken toepassen uit image processing.
+Bijvoorbeeld technieken voor edge detection.
+
+Het idee hier is om in de x-richting en in de y-richting een (benadering) van de eerste afgeleide te berekenen (= gradiënt / helling).
+Vervolgens kunnen deze beide componenten via de Euclidische norm gecombineerd worden tot een gradiëntsterkte (of gradiënt intensiteit):
+
+$$|{\nabla f}| = \sqrt{\bigg(\frac{\partial}{\partial x}f\bigg)^2 + \bigg(\frac{\partial}{\partial y}f\bigg)^2}$$
+
+Er kan ook een gradiënt richting uit afgeleid worden:
+
+$$\sphericalangle ({\nabla f}) = \text{atan2}(\frac{\partial}{\partial y}f, \frac{\partial}{\partial x}f)$$
+
+Figuur \@ref(fig:gradmag) laat zien dat de sterkste gradiënten zich situeren in de kruinen van de bomen en bij scherpe overgangen van bos of bomenrijen naar grasland.
+
+Figuur \@ref(fig:gradmag-proefvlakken) toont de gradiëntsterkte binnen de proefvlakken.
+Dus ook in lage vegetaties (\< 2m) geeft deze kaart aan waar de overgangen zijn en hoe sterk deze zijn.
+
+(ref:gradmag) Gradiëntsterktekaart. De eenheid is [m/m]. Hogere waarden komen overeen met zones waar een sterkere overgang is van laag naar hoog. Vooraf aan de berekening van de gradiëntsterkte werd het CHM model eerst gesmooth met de functie `imager::isoblur()` om ruis te onderdrukken.
+
+(ref:gradmag-proefvlakken) Details van de gradiëntsterktekaart voor de proefvlakken.
+
+```{r gradmag, fig.cap = "(ref:gradmag)"}
+gradmag_mosaic <- calc_gradient_magnitude(chm_mosaic,
+                                          blur = TRUE,
+                                          sigma = 2)
+
+ggplot() +
+  geom_stars(data = st_as_stars(gradmag_mosaic),
+             downsample = 11) +
+  scale_fill_viridis_c() +
+  coord_equal() +
+  theme_void()
+```
+
+```{r}
+t1 <- terra::crop(gradmag_mosaic, chm_b1[[2]]) %>%
+  st_as_stars()
+names(t1) <- "gradiënt"
+t2 <- st_as_stars(chm_b1[[2]])
+names(t2) <- "chm"
+
+p1 <- ggplot() +
+  geom_stars(data = t2, downsample = 3) +
+  coord_equal() +
+  theme_void()
+
+p2 <- ggplot() +
+  geom_stars(data = t1, downsample = 3) +
+  coord_equal() +
+  theme_void()
+
+p1 + p2 &
+  scale_fill_viridis_c()
+```
+
+```{r gradmag-proefvlakken, fig.cap = "(ref:gradmag-proefvlakken)"}
+proefvlakken_gradmag <- pb_plot_chm %>%
+  group_by(gebied, code_plot) %>%
+  nest() %>%
+  mutate(
+    plotgm = map(data, function(x){
+      terra::crop(gradmag_mosaic, vect(x), mask = TRUE) %>%
+        st_as_stars()
+      }
+    ),
+    ggplots = pmap(list(code_plot = code_plot,
+                        plotgm = plotgm),
+                   function(code_plot, plotgm) {
+                     ggplot() +
+                       geom_stars(data = plotgm) +
+                       theme_void() +
+                       coord_equal() +
+                       labs(
+                         title = code_plot)
+                   })
+  )
+
+patchwork::wrap_plots(
+  proefvlakken_gradmag$ggplots, ncol = 3, guides = "collect") &
+  scale_fill_viridis_c(
+    breaks = c(0, 0.1, 0.2, 0.3, 0.4, 0.5),
+    limits = c(0, 0.5)
+  )
+```
+
+### Topografische openheid?
+
+-   gemiddelde hoek ten opzichte van zenith in 8 richtingen (vrije kijkrichting) binnen een bepaalde maximale afstand
+-   deze berekende rasterwaarden eventueel verder uitmiddelen of standaarddeviatie op berekenen binnen straal van x m
+
+### Lacunarity / gap analysis?
+
+gaps =\> ecologische niches theorie?
+
+<https://github.com/STBrinkmann/spatLac>
+
+<!--Kan dit dienen om de "korrel" van de vegetatiestructuur te beschrijven?
+bv heidestruiken bulten ongeveer 30cm
+-->
+
+### Microklimaat gerelateerd?
+
+<https://saga-gis.sourceforge.io/saga_tool_doc/7.2.0/ta_lighting_2.html>
+
+cf @zellweger2019
+
+-   Zonne-instraling met en zonder schaduw van de vegetatie
+
+@jucker2018
+
+Related to microclimate
+
+-   DEM (affecting air temperature and humidity)
+
+    -   elevation
+
+    -   slope
+
+    -   aspect
+
+    -   topographic position index
+
+-   CHM
+
+    -   max canopy height
+
+    -   mean top-of-canopy height
+
+    -   gap fraction at 2m above ground
+
+    -   standard deviation of top-of-canopy height
+
+    -   plant area index (m²/m²)
+
+## CHM + NDVI?
+
+NDVI = Normalized difference vegetation index
+
+De index meet de groenheid (bladgroen) en densiteit van de vegetatie.
+
+Ze wordt afgeleid van een "valse-kleuren infrarood" beeld.
+Hierin worden de banden van nabij infrarood, rood en groen van de sensor geassocieerd met de kleuren rood, groen en blauw van het scherm.
+
+Berekening:
+
+$$NDVI = \frac{NIR - RED}{NIR + RED}$$
+
+De mapping is dus:
+
+-   NIR = nabij-infrarood = band1 = "rood op het scherm"
+-   RED = rood = band2 = "groen op het scherm"
+
+Opgelet!
+NDVI wordt hier afgeleid uit het valse-kleuren infrarood beeld van de orthofotomozaïek zomerluchtopname gemaakt van 17 juni tot en met 1 juli 2018.
+De NDVI waarden reflecteren dus de toestand van de vegetatie in deze periode en de waarden worden negatief beïnvloed door stressfactoren zoals droogte die een groeiachterstand veroorzaken.
+De dronevluchten, waarmee de CHM bepaald werd, dateren echter van eind augustus 2020.
+We kunnen hier dus wel een verkenning doen van de relaties tussen vegetatiehoogte en NDVI, maar om dit effectief in het project te kunnen gebruiken op een meer betrouwbare manier, zouden beide variabelen dus over dezelfde periode ingezameld moeten worden.
+Dit kan alleen indien de sensor die gebruikt wordt bij de dronevluchten ook de NIR band capteert.
+
+```{r calc-ndvi}
+ndvi_res <- 0.25
+
+ndvi_b1 <- calc_ndvi(dsm = Ename_20200831_DEM_Blok1,
+                     target_resolution = ndvi_res,
+                     overwrite = FALSE)
+ndvi_b2 <- calc_ndvi(dsm = Ename_20200831_DEM_Blok2,
+                     target_resolution = ndvi_res,
+                     overwrite = FALSE)
+ndvi_b3 <- calc_ndvi(dsm = Ename_20200831_DEM_Blok3,
+                     target_resolution = ndvi_res,
+                     overwrite = FALSE)
+ndvi_b4 <- calc_ndvi(dsm = Ename_20200831_DEM_Blok4,
+                     target_resolution = ndvi_res,
+                     overwrite = FALSE)
+ndvi_b5 <- calc_ndvi(dsm = Ename_20200831_DEM_Blok5,
+                     target_resolution = ndvi_res,
+                     overwrite = FALSE)
+ndvi_b6 <- calc_ndvi(dsm = Ename_20200831_DEM_Blok6,
+                     target_resolution = ndvi_res,
+                     overwrite = FALSE)
+
+```
+
+```{r}
+ndvimosaicname <- file.path(get_map_procesbeheer(),
+                       "PB06_Drone_En_Beelden",
+                       "PB_afgeleide_data",
+                       "ndvi",
+                       paste0("Ename_20200831_NDVI_mosaic",
+                              "_res",
+                              "0.25",
+                              ".tif"))
+
+```
+
+```{r ndvi-mosaic-res0.25, eval=!file.exists(ndvimosaicname)}
+terra::mosaic(
+  ndvi_b1,
+  ndvi_b2,
+  ndvi_b3,
+  ndvi_b4,
+  ndvi_b5,
+  ndvi_b6,
+  filename = ndvimosaicname,
+  wopt = list(gdal = c("COMPRESS=LZW", "TFW=YES")),
+  overwrite = FALSE
+  )
+```
+
+```{r eval=file.exists(ndvimosaicname)}
+ndvi_mosaic <- rast(ndvimosaicname)
+ggplot() + 
+  geom_stars(data = st_as_stars(ndvi_mosaic),
+             downsample = 11) +
+  coord_equal() +
+  theme_void() +
+  scale_fill_viridis_c() +
+  labs(fill = "ndvi")
+```
+
+```{r points1000}
+set.seed(12)
+sample1000 <- pb_onderzoeksgebied %>%
+  st_sample(size = 1000, type = "hexagonal") %>%
+  st_as_sf() %>%
+  mutate(pointid = row_number())
+
+names(ndvi_mosaic) <- "ndvi"
+
+ndvi_df <- terra::extract(
+  ndvi_mosaic,
+  sample1000)
+
+names(chm_mosaic) <- "chm"
+
+chm_df <- terra::extract(chm_mosaic, sample1000)
+
+ndvi_chm_df <- ndvi_df %>%
+  inner_join(chm_df, by = "ID") %>%
+  as_tibble()
+
+
+```
+
+```{r fc3m-1000}
+set.seed(12)
+fc3m_1000 <- pb_onderzoeksgebied %>%
+  st_sample(size = 1000, type = "hexagonal") %>%
+  st_as_sf() %>%
+  st_buffer(dist = 3) %>%
+  mutate(pointid = row_number())
+
+names(ndvi_mosaic) <- "ndvi"
+
+fc3m_ndvi_df <- exactextractr::exact_extract(
+  ndvi_mosaic,
+  fc3m_1000,
+  fun = "mean",
+  force_df = TRUE,
+  append_cols = "pointid")
+
+names(chm_mosaic) <- "chm"
+
+fc3m_chm_df <- exactextractr::exact_extract(
+  chm_mosaic,
+  fc3m_1000,
+  fun = "mean",
+  force_df = TRUE,
+  append_cols = "pointid")
+
+fc3m_ndvi_chm_df <- fc3m_ndvi_df %>%
+  rename(mean_ndvi = mean) %>%
+  inner_join(fc3m_chm_df %>%
+               rename(mean_chm = mean),
+             by = "pointid") %>%
+  as_tibble()
+
+
+```
+
+Figuur \@ref(fig:ndvi-chm-plots) toont aan dat er een lineair verband is tussen de NDVI en log-gestransformeerde vegetatiehoogte.
+Bij een vegetatiehoogte van 1 m is de NDVI gemiddeld 0.37 (gemeten in een puntlocatie).
+Bij elke sprong in grootte-orde (mm naar cm, cm naar dm, dm naar m, ...), neemt de NDVI gemiddeld toe met 0.077.
+De individuele metingen vertonen een vrij grote spreiding rond dit gemiddelde.
+Deze afwijkingen (residuen) zouden in principe kunnen gebruikt worden om, gegeven een bepaalde vegetatie-hoogte, aan te geven of de vegetatie minder of meer groen en dens is dan gemiddeld.
+De afwijkingen die we nu echter zien, hebben echter ook te maken met het verschil in tijdstip van de verschillende remote sensing producten.
+Bijvoorbeeld, een hoge NDVI en een zeer lage vegetatiehoogte heeft misschien gewoon te maken met begrazing of maaibeheer voorafgaand aan de periode van de dronevluchten.
+Bovendien zijn de relatieve fouten op vegetatiehoogtes in grootte-ordes van mm tot enkele dm zeer groot.
+
+(ref:ndvi-chm-plots) Relaties tussen vegetatiehoogte zoals gemeten door CHM en NDVI. (a en b) zijn op basis van 1000 waarden op puntlocaties op een hexagonaal grid, (c en d) zijn op basis van gemiddelde waarden in een 3 m buffer rond deze puntlocaties. (a en c) ongetransformeerde assen. (b en d) hier is vegetatiehoogte in de log schaal en zijn enkel strikt positieve waarden behouden. De regressielijn is van een lineair model met normaal verdeelde residuen.
+
+```{r ndvi-chm-plots, fig.cap = "(ref:ndvi-chm-plots)"}
+p1 <- ndvi_chm_df %>%
+  ggplot() + 
+  geom_point(aes(x = chm, y = ndvi),
+             alpha = 0.3)
+
+p2 <- ndvi_chm_df %>%
+  filter(ndvi > 0, chm > 0) %>%
+  ggplot(aes(x = chm, y = ndvi)) + 
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm") +
+  scale_x_log10(labels = ~ format(.x,
+                                  scientific = FALSE,
+                                  drop0trailing = TRUE))
+
+p3 <- fc3m_ndvi_chm_df %>%
+  ggplot() + 
+  geom_point(aes(x = mean_chm, y = mean_ndvi),
+             alpha = 0.3)
+
+p4 <- fc3m_ndvi_chm_df %>%
+  filter(mean_ndvi > 0, mean_chm > 0) %>%
+  ggplot(aes(x = mean_chm, y = mean_ndvi)) + 
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm") +
+  scale_x_log10(labels = ~ format(.x,
+                                  scientific = FALSE,
+                                  drop0trailing = TRUE))
+
+(p1 + p2) / (p3 + p4) + patchwork::plot_annotation(tag_levels = "a")
+```
+
+# Gebiedsdekkende structuurkaart
+
+-   gebiedsniveau: een kaart die de structuur weergeeft
+
+## CHM
+
+```{r focal-function}
+
+my_focal <- function(filename, ...) {
+  if (file.exists(filename)) {
+    terra::rast(filename)
+  } else {
+    terra::focal(filename = filename, ...)
+  }
+  
+}
+```
+
+```{r}
+# probeer hetzelfde als geodiv::texture_image, maar met terra
+# het lijkt efficiënter om terra::focal te gebruiken, evt 
+# in combinatie met summary functions van geodiv
+circle3 <- focalMat(chm_mosaic,
+                    d = 3,
+                    type = "circle",
+                    fillNA = TRUE)
+circle3[!is.na(circle3)] <- 1
+
+# 5 minuutjes
+chm_mosaic_fcircle3_sd <- my_focal(
+  x = chm_mosaic,
+  w = circle3,
+  fun = sd,
+  na.rm = TRUE,
+  filename = file.path(map_procesbeheer,
+                       "PB06_Drone_En_Beelden",
+                       "PB_afgeleide_data",
+                       "chm",
+                       paste0("Ename_20200831_CHM_mosaic",
+                              "_res",
+                              "0.25",
+                              "_fcircle3m_sd.tif")),
+  overwrite = FALSE)
+
+
+chm_mosaic_fcircle3_skewness <- my_focal(
+  x = chm_mosaic,
+  w = circle3,
+  fun = ssk,
+  na.rm = TRUE,
+  filename = file.path(map_procesbeheer,
+                       "PB06_Drone_En_Beelden",
+                       "PB_afgeleide_data",
+                       "chm",
+                       paste0("Ename_20200831_CHM_mosaic",
+                              "_res",
+                              "0.25",
+                              "_fcircle3m_ssk.tif")),
+  silent = FALSE,
+  overwrite = FALSE)
+
+```
+
+De kaarten tonen nu dezelfde info als we berekend hebben voor de structuurvariatie in een proefvlak.
+Elke pixel in de kaart geeft dus de waarde van de standaardafwijking of de scheefheid in een cirkel van 3 meter straal rond deze pixel (de resolutie is 25 cm x 25 cm).
+
+Een andere straal kiezen zal een andere kaart opleveren.
+Het is ook mogelijk om bijvoorbeeld een vierkant "moving window" te nemen in plaats van een cirkelvormig, dat resulteert in snellere berekeningen.
+Een andere optie is een weging toepassen waarbij cellen dichtbij een groter gewicht krijgen dan cellen verderaf.
+Voor de vergelijkbaarheid met de structuurvariatie op proefvlakniveau, lijkt het echter niet verkeerd om dezelfde 3 m straal cirkel te nemen als "moving window".
+
+(ref:kaart-sd) Kaart van structuurvariatie op basis van standaardafwijking in cirkel met straal 3 m (eenheid is meter)
+
+```{r kaart-sd, fig.cap = "(ref:kaart-sd)"}
+ggplot() +
+  geom_stars(data = st_as_stars(chm_mosaic_fcircle3_sd),
+             downsample = 11) +
+  coord_equal() +
+  theme_void() +
+  scale_fill_viridis_c() +
+  labs(fill = "sd")
+```
+
+(ref:kaart-ssk) Kaart van structuurvariatie op basis van maat voor scheefheid in cirkel met straal 3 m. In de tweede kaart zijn de waarden kleiner dan -1 op -1 gezet, waarden tussen -1 en 1 op 0 en waarden groter dan 1 op 1.
+
+```{r kaart-ssk, fig.cap = "(ref:kaart-ssk)"}
+p1 <- ggplot() +
+  geom_stars(data = st_as_stars(chm_mosaic_fcircle3_skewness),
+             downsample = 11) +
+  coord_equal() +
+  theme_void() +
+  scale_fill_viridis_c() +
+  labs(fill = "skewness")
+
+p2 <- ggplot() +
+  geom_stars(data = st_as_stars(chm_mosaic_fcircle3_skewness),
+             downsample = 11) +
+  coord_equal() +
+  theme_void() +
+  scale_fill_viridis_b(breaks = c(-1, 1, +Inf)) +
+  labs(fill = "binned skewness")
+  
+
+p1 + p2
+```
+
+### local Moran map
+
+```{r localmoranname}
+localmoranname <- file.path(get_map_procesbeheer(),
+                       "PB06_Drone_En_Beelden",
+                       "PB_afgeleide_data",
+                       "chm",
+                       paste0("Ename_20200831_CHM_mosaic",
+                              "_res",
+                              "0.25_localmoran",
+                              ".tif"))
+```
+
+```{r calc-local-moran-map, eval=!file.exists(localmoranname)}
+chm_mosaic_moran <- autocor(chm_mosaic, w = circle3, global = FALSE)
+writeRaster(chm_mosaic_moran, localmoranname)
+```
+
+```{r eval = file.exists(localmoranname)}
+chm_mosaic_moran <- rast(localmoranname)
+```
+
+```{r plot-local-moran-map}
+ggplot() +
+  geom_stars(data = st_as_stars(chm_mosaic_moran),
+             downsample = 11) +
+  coord_equal() +
+  theme_void() +
+  scale_fill_viridis_c() +
+  labs(fill = "local Moran")
+```
+
+### Correlaties tussen metrieken
+
+```{r}
+moran <- terra::extract(chm_mosaic_moran, sample1000 %>% st_buffer(dist = 3), fun = "mean")
+gradm <- terra::extract(gradmag_mosaic, sample1000 %>% st_buffer(dist = 3), fun = "mean")
+sd <- terra::extract(chm_mosaic_fcircle3_sd, sample1000)
+ssk <- terra::extract(chm_mosaic_fcircle3_skewness, sample1000)
+
+
+
+data.frame(moran = moran$chm, gradm = gradm$lyr.1,
+           sd = sd$focal_sd, skewness = ssk$Ename_20200831_DEM_Blok1) %>%
+  GGally::ggpairs()
+
+combined <- c(chm_mosaic_moran, gradmag_mosaic,
+              chm_mosaic_fcircle3_skewness, chm_mosaic_fcircle3_sd)
+names(combined) <- c("moran", "gradmag", "skewness", "sd")
+
+plot(combined)
+```
+
+## CHM + NDVI
+
+## Classificatie
+
+Mogelijke pistes:
+
+-   gebiedsdekkende structuurkaarten op basis van de metrieken (sd, ssk) indelen via thresholds
+
+    -   Zie @storey2020 voor voorbeeld van classificatie op basis van thresholds en enkel hoogte, enkel spectrale gegevens of hybride van hoogte en spectrale gegevens. Hybride gaf beste resultaat. De bedoeling was hier echter classificatie in vegetatievormen (barren, subshrub, shrub, trees).
+
+-   rechtstreeks op de kaarten met vegetatiehoogtes en ndvi een classificatie uitvoeren via één of ander algorithme (k-means of SOM lijken voor de hand liggende opties) en daarna de clusterkenmerken karakteriseren door achteraf metrieken (sd, ssk) te berekenen
+
+# Referenties

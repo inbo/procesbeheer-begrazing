@@ -1,0 +1,261 @@
+[
+    {
+        "DOI": "10.1111/2041-210X.13677",
+        "ISSN": "2041-210X",
+        "URL": "https://onlinelibrary.wiley.com/doi/abs/10.1111/2041-210X.13677",
+        "_eprint": "https://onlinelibrary.wiley.com/doi/pdf/10.1111/2041-210X.13677",
+        "accessed": {
+            "date-parts": []
+        },
+        "author": [
+            {
+                "family": "Smith",
+                "given": "Annie C."
+            },
+            {
+                "family": "Dahlin",
+                "given": "Kyla M."
+            },
+            {
+                "family": "Record",
+                "given": "Sydne"
+            },
+            {
+                "family": "Costanza",
+                "given": "Jennifer K."
+            },
+            {
+                "family": "Wilson",
+                "given": "Adam M."
+            },
+            {
+                "family": "Zarnetske",
+                "given": "Phoebe L."
+            }
+        ],
+        "container-title": "Methods in Ecology and Evolution",
+        "id": "smith2021",
+        "issue": "11",
+        "issued": {
+            "date-parts": [
+                [
+                    2021
+                ]
+            ]
+        },
+        "key": "JNKQ5BV5",
+        "language": "en",
+        "libraryid": "1",
+        "note": "_eprint: https://onlinelibrary.wiley.com/doi/pdf/10.1111/2041-210X.13677",
+        "page": "2094-2100",
+        "providerkey": "2509FBBE-5BB0-44C4-B119-6083A81ED673",
+        "source": "Wiley Online Library",
+        "title": "The geodiv r package: Tools for calculating gradient surface metrics",
+        "title-short": "The geodiv r package",
+        "type": "article-journal",
+        "volume": "12"
+    },
+    {
+        "DOI": "10.1080/2150704x.2020.1730467",
+        "ISSN": "2150-704X",
+        "PMCID": "PMC7607922",
+        "PMID": "33149957",
+        "URL": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7607922/",
+        "accessed": {
+            "date-parts": []
+        },
+        "author": [
+            {
+                "family": "Storey",
+                "given": "Emanuel Arnal"
+            }
+        ],
+        "container-title": "Remote sensing letters (Print)",
+        "container-title-short": "Remote Sens Lett",
+        "id": "storey2020",
+        "issue": "5",
+        "issued": {
+            "date-parts": [
+                [
+                    2020
+                ]
+            ]
+        },
+        "key": "ZN9B9AYI",
+        "libraryid": "1",
+        "page": "426-435",
+        "providerkey": "2509FBBE-5BB0-44C4-B119-6083A81ED673",
+        "source": "PubMed Central",
+        "title": "Mapping plant growth forms using structure-from-motion data combined with spectral image derivatives",
+        "type": "article-journal",
+        "volume": "11"
+    },
+    {
+        "DOI": "10.3390/rs14071557",
+        "ISSN": "2072-4292",
+        "URL": "https://www.mdpi.com/2072-4292/14/7/1557",
+        "accessed": {
+            "date-parts": []
+        },
+        "author": [
+            {
+                "family": "Guimarães-Steinicke",
+                "given": "Claudia"
+            },
+            {
+                "family": "Weigelt",
+                "given": "Alexandra"
+            },
+            {
+                "family": "Ebeling",
+                "given": "Anne"
+            },
+            {
+                "family": "Eisenhauer",
+                "given": "Nico"
+            },
+            {
+                "family": "Wirth",
+                "given": "Christian"
+            }
+        ],
+        "container-title": "Remote Sensing",
+        "id": "guimarães-steinicke2022",
+        "issue": "7",
+        "issued": {
+            "date-parts": [
+                [
+                    2022,
+                    1
+                ]
+            ]
+        },
+        "key": "YQMYT9MT",
+        "language": "en",
+        "libraryid": "1",
+        "number": "7",
+        "page": "1557",
+        "providerkey": "2509FBBE-5BB0-44C4-B119-6083A81ED673",
+        "publisher": "Multidisciplinary",
+        "rights": "http://creativecommons.org/licenses/by/3.0/",
+        "source": "www.mdpi.com",
+        "title": "Diversity Effects on Canopy Structure Change throughout a Growing Season in Experimental Grassland Communities",
+        "type": "article-journal",
+        "volume": "14"
+    },
+    {
+        "DOI": "10.1016/j.tree.2018.12.012",
+        "ISSN": "0169-5347",
+        "URL": "https://www.sciencedirect.com/science/article/pii/S0169534718303045",
+        "accessed": {
+            "date-parts": []
+        },
+        "author": [
+            {
+                "family": "Zellweger",
+                "given": "Florian"
+            },
+            {
+                "family": "De Frenne",
+                "given": "Pieter"
+            },
+            {
+                "family": "Lenoir",
+                "given": "Jonathan"
+            },
+            {
+                "family": "Rocchini",
+                "given": "Duccio"
+            },
+            {
+                "family": "Coomes",
+                "given": "David"
+            }
+        ],
+        "container-title": "Trends in Ecology & Evolution",
+        "container-title-short": "Trends in Ecology & Evolution",
+        "id": "zellweger2019",
+        "issue": "4",
+        "issued": {
+            "date-parts": [
+                [
+                    2019,
+                    4,
+                    1
+                ]
+            ]
+        },
+        "key": "GGWLTWB6",
+        "language": "en",
+        "libraryid": "1",
+        "page": "327-341",
+        "providerkey": "2509FBBE-5BB0-44C4-B119-6083A81ED673",
+        "source": "ScienceDirect",
+        "title": "Advances in Microclimate Ecology Arising from Remote Sensing",
+        "type": "article-journal",
+        "volume": "34"
+    },
+    {
+        "DOI": "10.1111/gcb.14415",
+        "ISSN": "1365-2486",
+        "URL": "https://onlinelibrary.wiley.com/doi/abs/10.1111/gcb.14415",
+        "_eprint": "https://onlinelibrary.wiley.com/doi/pdf/10.1111/gcb.14415",
+        "accessed": {
+            "date-parts": []
+        },
+        "author": [
+            {
+                "family": "Jucker",
+                "given": "Tommaso"
+            },
+            {
+                "family": "Hardwick",
+                "given": "Stephen R."
+            },
+            {
+                "family": "Both",
+                "given": "Sabine"
+            },
+            {
+                "family": "Elias",
+                "given": "Dafydd M.O."
+            },
+            {
+                "family": "Ewers",
+                "given": "Robert M."
+            },
+            {
+                "family": "Milodowski",
+                "given": "David T."
+            },
+            {
+                "family": "Swinfield",
+                "given": "Tom"
+            },
+            {
+                "family": "Coomes",
+                "given": "David A."
+            }
+        ],
+        "container-title": "Global Change Biology",
+        "id": "jucker2018",
+        "issue": "11",
+        "issued": {
+            "date-parts": [
+                [
+                    2018
+                ]
+            ]
+        },
+        "key": "WZMP3LQK",
+        "language": "en",
+        "libraryid": "1",
+        "note": "_eprint: https://onlinelibrary.wiley.com/doi/pdf/10.1111/gcb.14415",
+        "page": "5243-5258",
+        "providerkey": "Zotero",
+        "source": "Wiley Online Library",
+        "title": "Canopy structure and topography jointly constrain the microclimate of human-modified tropical landscapes",
+        "type": "article-journal",
+        "volume": "24"
+    }
+]
